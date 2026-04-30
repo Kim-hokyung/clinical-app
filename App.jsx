@@ -1,246 +1,8 @@
-import React, { useMemo, useState } from "react";
-
-const todayKST = () => {
-  const now = new Date();
-  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  return kst.toISOString().slice(0, 10);
-};
-
-const toSlash = (d) => d.replaceAll("-", "/");
-
-const num = (v) => {
-  if (v === null || v === undefined || v === "") return null;
-  const n = Number(String(v).replace(/[^\d.-]/g, ""));
-  return Number.isFinite(n) ? n : null;
-};
-
-const fmt = (v, digit = 1) => {
-  if (v === null || v === undefined || v === "") return "";
-  if (!Number.isFinite(Number(v))) return String(v);
-  return Number(v).toFixed(digit).replace(/\.0$/, "");
-};
-
-const mark = (v, low, high) => {
-  const n = num(v);
-  if (n === null) return "";
-  if (n < low) return `${fmt(n)} ▼`;
-  if (n > high) return `${fmt(n)} ▲`;
-  return `${fmt(n)}`;
-};
-
-const findVal = (text, names) => {
-  for (const name of names) {
-    const re = new RegExp(`${name}[^\\n\\d.-]*([<>]?[\\d.]+)`, "i");
-    const m = text.match(re);
-    if (m) return num(m[1]);
-  }
-  return null;
-};
-
-function parseLab(text) {
-  return {
-    protein: findVal(text, ["Protein, total", "Protein total", "Protein"]),
-    albumin: findVal(text, ["Albumin\\(S\\)", "Albumin"]),
-    bilirubin: findVal(text, ["Bilirubin, total"]),
-    ast: findVal(text, ["AST\\(SGOT\\)", "AST"]),
-    alt: findVal(text, ["ALT\\(SGPT\\)", "ALT"]),
-    alp: findVal(text, ["ALP", "Alkaline"]),
-    ggt: findVal(text, ["γ-GT", "r-GT", "GGT"]),
-    chol: findVal(text, ["Cholesterol, total"]),
-    tg: findVal(text, ["Triglyceride"]),
-    bun: findVal(text, ["BUN\\(S\\)", "BUN"]),
-    cr: findVal(text, ["Creatinine\\(S\\)", "Creatinine"]),
-    glucose: findVal(text, ["Glucose\\(S\\)", "Glucose"]),
-    p: findVal(text, ["Inorganic phosphorus", "Phosphorus"]),
-    ca: findVal(text, ["Ionized Ca", "Ca"]),
-    mg: findVal(text, ["Mg\\(Magnesium\\)", "Magnesium"]),
-    na: findVal(text, ["Na\\(Sodium\\)", "Na\\(S\\)", "Na"]),
-    k: findVal(text, ["K\\(Potassium\\)", "K\\(S\\)", "K"]),
-    cl: findVal(text, ["Cl\\(Chloride\\)", "Cl\\(S\\)", "Cl"]),
-    co2: findVal(text, ["Total CO2", "TotalCO2"]),
-    nau: findVal(text, ["Na\\(U\\)"]),
-    ku: findVal(text, ["K\\(U\\)"]),
-    clu: findVal(text, ["Cl\\(U\\)"]),
-    cru: findVal(text, ["Creatinine\\(U\\)"]),
-    bunu: findVal(text, ["BUN\\(U\\)"]),
-    pct: findVal(text, ["Procalcitonin"]),
-    lactate: findVal(text, ["Lactic acid", "Lactate"]),
-    wbc: findVal(text, ["WBC"]),
-    rbc: findVal(text, ["RBC"]),
-    hb: findVal(text, ["Hb"]),
-    hct: findVal(text, ["Hct"]),
-    plt: findVal(text, ["Platelet"]),
-    mcv: findVal(text, ["MCV"]),
-    mch: findVal(text, ["MCH"]),
-    mchc: findVal(text, ["MCHC"]),
-    seg: findVal(text, ["Seg neutrophil", "Seg"]),
-    lymph: findVal(text, ["Lymphocyte"]),
-    mono: findVal(text, ["Monocyte"]),
-    eos: findVal(text, ["Eosinophil"]),
-    baso: findVal(text, ["Basophil"]),
-    nrbc: findVal(text, ["N-RBC"]),
-    blast: findVal(text, ["Blast"]),
-    crp: findVal(text, ["CRP\\(정량\\)", "CRP"]),
-    uosm: findVal(text, ["Osmolality\\(U\\)", "Uosm"]),
-    sg: findVal(text, ["Specific Gravity\\(U\\)", "SG\\(U\\)"]),
-    phu: findVal(text, ["pH\\(U\\)"]),
-    raw: text
-  };
-}
-
-function calc(d) {
-  const sosm =
-    d.na !== null && d.glucose !== null && d.bun !== null
-      ? 2 * d.na + d.glucose / 18 + d.bun / 2.8
-      : null;
-
-  const ag =
-    d.na !== null && d.cl !== null && d.co2 !== null
-      ? d.na - (d.cl + d.co2)
-      : null;
-
-  const uag =
-    d.nau !== null && d.ku !== null && d.clu !== null
-      ? d.nau + d.ku - d.clu
-      : null;
-
-  const buncr = d.bun !== null && d.cr ? d.bun / d.cr : null;
-
-  const fena =
-    d.nau !== null && d.cr !== null && d.na !== null && d.cru
-      ? ((d.nau * d.cr) / (d.na * d.cru)) * 100
-      : null;
-
-  const feu =
-    d.bunu !== null && d.cr !== null && d.bun !== null && d.cru
-      ? ((d.bunu * d.cr) / (d.bun * d.cru)) * 100
-      : null;
-
-  return { sosm, ag, uag, buncr, fena, feu };
-}
-
-function buildReport(d, c, date) {
-  return `#${date}
-◆최종결과보고◆(검체채취일:${toSlash(date)})
-▶임상화학검사
-Protein:Albumin=${mark(d.protein, 6.6, 8.3)}/${mark(d.albumin, 3.5, 5.2)}
-Bilirubin,total=${fmt(d.bilirubin)}
-AST:ALT=${mark(d.ast, 0, 40)}/${mark(d.alt, 0, 40)}
-ALP:γ-GT=${mark(d.alp, 30, 120)}/${mark(d.ggt, 0, 64)}
-Cholesterol,total:Triglyceride=${fmt(d.chol)}/${mark(d.tg, 0, 150)}
-Glucose:${mark(d.glucose, 60, 100)}
-Na:K:Cl=${mark(d.na, 136, 146)}/${mark(d.k, 3.5, 5.1)}/${mark(d.cl, 101, 109)}
-Mg:Ca²⁺:P=${mark(d.mg, 1.6, 2.6)}/${mark(d.ca, 1.16, 1.32)}/${mark(d.p, 2.5, 4.5)}
-Na(U):K(U):Cl(U)=${fmt(d.nau)}/${fmt(d.ku)}/${fmt(d.clu)}
-BUN:Creatinine=${mark(d.bun, 7.9, 25)}/${mark(d.cr, 0.55, 0.98)}
-BUN(U):Creatinine(U)=${fmt(d.bunu)}/${fmt(d.cru)}
-TotalCO2:${mark(d.co2, 22, 29)}
-CRP:Procalcitonin=${mark(d.crp, 0, 0.5)}/${mark(d.pct, 0, 0.5)}
-Lactic acid=${fmt(d.lactate)}
-
-▶진단혈액검사
-RBC:WBC:Platelet=${mark(d.rbc, 3.7, 5.2)}/${mark(d.wbc, 4, 10)}/${mark(d.plt, 150, 450)}
-Hb:Hct=${mark(d.hb, 11.3, 15)}/${mark(d.hct, 32, 44)}
-MCV:MCH:MCHC=${mark(d.mcv, 80, 99.9)}/${mark(d.mch, 25.7, 33)}/${mark(d.mchc, 32, 36)}
-WBC:${fmt(d.wbc)}/Seg:Neutrophil ${mark(d.seg, 41.7, 75)}
-Lymphocyte:Monocyte:Eosinophil:Basophil=${mark(d.lymph, 18.4, 45)}/${fmt(d.mono)}/${fmt(d.eos)}/${fmt(d.baso)}
-N-RBC:Blast=${fmt(d.nrbc)}/${fmt(d.blast)}`;
-}
-
-function abnormalSummary(d, c, date) {
-  const lines = [];
-
-  if (d.protein < 6.6 || d.albumin < 3.5)
-    lines.push(`- Protein/Albumin: ${mark(d.protein,6.6,8.3)} / ${mark(d.albumin,3.5,5.2)} (저단백/저알부민 소견)`);
-  if (d.alp > 120 || d.ggt > 64)
-    lines.push(`- ALP/γ-GT: ${mark(d.alp,30,120)} / ${mark(d.ggt,0,64)} (간담도계 부하 가능성)`);
-  if (d.crp > 0.5 || d.wbc > 10)
-    lines.push(`- WBC/CRP: ${mark(d.wbc,4,10)} / ${mark(d.crp,0,0.5)} (염증 반응 증가)`);
-  if (d.hb < 11.3)
-    lines.push(`- Hb/Hct: ${mark(d.hb,11.3,15)} / ${mark(d.hct,32,44)} (빈혈 소견)`);
-  if (d.co2 < 22)
-    lines.push(`- TotalCO2: ${mark(d.co2,22,29)} (대사성 산증 의심)`);
-  if (d.na < 136)
-    lines.push(`- Na: ${mark(d.na,136,146)} (저나트륨혈증)`);
-
-  return `#${date}
-◆비정상 수치 요약◆
-▶임상화학 및 혈액 비정상 소견
-${lines.length ? lines.join("\n") : "- 특이 비정상 소견 없음"}
-
-<<현재체액상태>>
-Na(S)=${fmt(d.na)}, Sosm=${mark(c.sosm,275,295)}
-Na(U)=${fmt(d.nau)}, Uosm=${fmt(d.uosm)}
-SG(U)=${fmt(d.sg,3)}, pH(U)=${fmt(d.phu)}
-BUN/Cr.=${fmt(c.buncr)}
-FENa=${fmt(c.fena,2)}%, FEUrea=${fmt(c.feu,2)}%
-TotalCO2=${fmt(d.co2)}, AG=${fmt(c.ag)}
-uAG=${mark(c.uag, -999, 0)}
-Cl(S):Cl(U)=${fmt(d.cl)}:${fmt(d.clu)}`;
-}
-
-function interpretation(d, c, date) {
-  const parts = [];
-
-  if (d.na < 136 || c.sosm < 275)
-    parts.push(`1.전해질상태
-- Na ${fmt(d.na)}로 저나트륨혈증 소견.
-- Sosm ${fmt(c.sosm)}로 저삼투 상태 여부 확인 필요.`);
-
-  if (d.co2 < 22 || c.ag > 16)
-    parts.push(`2.산염기상태
-- TotalCO2 ${fmt(d.co2)}로 감소 소견.
-- AG ${fmt(c.ag)}로 대사성 산증 여부 평가 필요.`);
-
-  if (d.cr > 0.98 || c.fena > 2 || c.feu > 50)
-    parts.push(`3.신장기능
-- Cr ${fmt(d.cr)}, BUN/Cr ${fmt(c.buncr)}.
-- FENa ${fmt(c.fena,2)}%, FEUrea ${fmt(c.feu,2)}%로 신장성/신전성 원인 감별 필요.`);
-
-  if (d.crp > 0.5 || d.wbc > 10 || d.pct > 0.5)
-    parts.push(`4.염증/감염
-- CRP ${fmt(d.crp)}, PCT ${fmt(d.pct)}, WBC ${fmt(d.wbc)}.
-- 감염 또는 염증 반응 가능성 있음.`);
-
-  if (d.hb < 11.3)
-    parts.push(`5.혈액
-- Hb ${fmt(d.hb)}로 빈혈 소견.`);
-
-  if (d.alp > 120 || d.ggt > 64)
-    parts.push(`6.간담도
-- ALP ${fmt(d.alp)}, γ-GT ${fmt(d.ggt)} 상승으로 간담도계 부하 가능성.`);
-
-  const summary =
-    d.crp > 0.5 || d.pct > 0.5
-      ? "- 염증/감염 소견 동반되어 임상 증상 및 배양검사 확인 필요."
-      : d.na < 136
-      ? "- 저나트륨혈증 중심으로 체액 상태 평가 필요."
-      : "- 주요 검사 이상 소견에 따른 임상적 추적 필요.";
-
-  return `#${date}
-[검사결과임상해석]
-${parts.length ? parts.join("\n\n") : "- 특이 임상 이상 소견 뚜렷하지 않음."}
-
-[한줄요약]
-#${date}
-${summary}`;
-}
+import React, { useState } from "react";
+import * as XLSX from "xlsx";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("lab");
-  const [input, setInput] = useState("");
-  const [results, setResults] = useState([]);
-
-  const analyzeLab = () => {
-    const date = todayKST();
-    const d = parseLab(input);
-    const c = calc(d);
-    setResults([
-      buildReport(d, c, date),
-      abnormalSummary(d, c, date),
-      interpretation(d, c, date),
-    ]);
-  };
 
   return (
     <div style={styles.page}>
@@ -268,33 +30,201 @@ export default function App() {
       </nav>
 
       <main style={styles.card}>
-        {activeTab === "lab" && (
-          <>
-            <h2>검사결과 정리</h2>
-            <textarea
-              style={styles.textarea}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="검사결과 텍스트를 붙여넣으세요"
-            />
-            <button style={styles.run} onClick={analyzeLab}>정리하기</button>
-
-            <div style={styles.resultArea}>
-              {results.map((r, i) => (
-                <pre key={i} style={styles.result}>{r}</pre>
-              ))}
-            </div>
-          </>
-        )}
-
+        {activeTab === "lab" && <LabAnalyzer />}
         {activeTab !== "lab" && (
           <div style={styles.ready}>
-            <h2>{activeTab} 기능</h2>
+            <h2>준비 중</h2>
             <p>다음 단계에서 구현합니다.</p>
           </div>
         )}
       </main>
     </div>
+  );
+}
+
+function LabAnalyzer() {
+  const [text, setText] = useState("");
+  const [outputs, setOutputs] = useState([]);
+
+  const today = () => {
+    const now = new Date();
+    const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    return kst.toISOString().slice(0, 10);
+  };
+
+  const slash = (d) => d.replaceAll("-", "/");
+
+  const readFile = async (file) => {
+    if (!file) return;
+
+    const name = file.name.toLowerCase();
+
+    if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array" });
+
+      let allText = "";
+      workbook.SheetNames.forEach((sheetName) => {
+        const sheet = workbook.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        rows.forEach((row) => {
+          allText += row.join(" ") + "\n";
+        });
+      });
+
+      setText(allText);
+      return;
+    }
+
+    if (name.endsWith(".txt")) {
+      const t = await file.text();
+      setText(t);
+      return;
+    }
+
+    alert("현재는 엑셀(.xlsx/.xls) 또는 텍스트(.txt)만 지원합니다.");
+  };
+
+  const get = (names) => {
+    for (const name of names) {
+      const re = new RegExp(`${name}[^\\n\\d.-]*([<>]?[0-9.]+)`, "i");
+      const m = text.match(re);
+      if (m) return Number(String(m[1]).replace(/[<>]/g, ""));
+    }
+    return "";
+  };
+
+  const fmt = (v) => {
+    if (v === "" || v === null || Number.isNaN(v)) return "";
+    return Number(v).toFixed(2).replace(/\.00$/, "").replace(/0$/, "");
+  };
+
+  const mark = (v, low, high) => {
+    if (v === "") return "";
+    if (v < low) return `${fmt(v)} ▼`;
+    if (v > high) return `${fmt(v)} ▲`;
+    return fmt(v);
+  };
+
+  const analyze = () => {
+    const date = today();
+
+    const d = {
+      protein: get(["Protein, total", "Protein"]),
+      albumin: get(["Albumin\\(S\\)", "Albumin"]),
+      ast: get(["AST\\(SGOT\\)", "AST"]),
+      alt: get(["ALT\\(SGPT\\)", "ALT"]),
+      alp: get(["ALP", "Alkaline"]),
+      ggt: get(["γ-GT", "GGT", "r-GT"]),
+      glucose: get(["Glucose\\(S\\)", "Glucose"]),
+      na: get(["Na\\(Sodium\\)", "Na"]),
+      k: get(["K\\(Potassium\\)", "K"]),
+      cl: get(["Cl\\(Chloride\\)", "Cl"]),
+      bun: get(["BUN"]),
+      cr: get(["Creatinine"]),
+      co2: get(["Total CO2", "TotalCO2"]),
+      crp: get(["CRP\\(정량\\)", "CRP"]),
+      pct: get(["Procalcitonin"]),
+      lactate: get(["Lactic acid", "Lactate"]),
+      wbc: get(["WBC"]),
+      rbc: get(["RBC"]),
+      hb: get(["Hb"]),
+      hct: get(["Hct"]),
+      plt: get(["Platelet"]),
+    };
+
+    const ag = d.na && d.cl && d.co2 ? d.na - (d.cl + d.co2) : "";
+    const buncr = d.bun && d.cr ? d.bun / d.cr : "";
+    const sosm = d.na && d.glucose && d.bun ? 2 * d.na + d.glucose / 18 + d.bun / 2.8 : "";
+
+    const block1 = `#${date}
+◆최종결과보고◆(검체채취일:${slash(date)})
+▶임상화학검사
+Protein:Albumin=${mark(d.protein, 6.6, 8.3)}/${mark(d.albumin, 3.5, 5.2)}
+AST:ALT=${mark(d.ast, 0, 40)}/${mark(d.alt, 0, 40)}
+ALP:γ-GT=${mark(d.alp, 30, 120)}/${mark(d.ggt, 0, 64)}
+Glucose=${mark(d.glucose, 60, 100)}
+Na:K:Cl=${mark(d.na, 136, 146)}/${mark(d.k, 3.5, 5.1)}/${mark(d.cl, 101, 109)}
+BUN:Creatinine=${mark(d.bun, 7.9, 25)}/${mark(d.cr, 0.55, 0.98)}
+TotalCO2=${mark(d.co2, 22, 29)}
+CRP:Procalcitonin=${mark(d.crp, 0, 0.5)}/${mark(d.pct, 0, 0.5)}
+Lactic acid=${fmt(d.lactate)}
+▶진단혈액검사
+RBC:WBC:Platelet=${mark(d.rbc, 3.7, 5.2)}/${mark(d.wbc, 4, 10)}/${mark(d.plt, 150, 450)}
+Hb:Hct=${mark(d.hb, 11.3, 15)}/${mark(d.hct, 32, 44)}`;
+
+    const abnormal = [];
+
+    if (d.protein < 6.6 || d.albumin < 3.5)
+      abnormal.push(`- Protein/Albumin: ${mark(d.protein, 6.6, 8.3)} / ${mark(d.albumin, 3.5, 5.2)} (저단백/저알부민 소견)`);
+    if (d.alp > 120 || d.ggt > 64)
+      abnormal.push(`- ALP/γ-GT: ${mark(d.alp, 30, 120)} / ${mark(d.ggt, 0, 64)} (간담도계 부하 가능성)`);
+    if (d.crp > 0.5 || d.wbc > 10)
+      abnormal.push(`- WBC/CRP: ${mark(d.wbc, 4, 10)} / ${mark(d.crp, 0, 0.5)} (염증 반응 증가)`);
+    if (d.hb < 11.3)
+      abnormal.push(`- Hb/Hct: ${mark(d.hb, 11.3, 15)} / ${mark(d.hct, 32, 44)} (빈혈 소견)`);
+    if (d.na < 136)
+      abnormal.push(`- Na: ${mark(d.na, 136, 146)} (저나트륨혈증)`);
+    if (d.co2 < 22)
+      abnormal.push(`- TotalCO2: ${mark(d.co2, 22, 29)} (대사성 산증 의심)`);
+
+    const block2 = `#${date}
+◆비정상 수치 요약◆
+▶임상화학 및 혈액 비정상 소견
+${abnormal.length ? abnormal.join("\n") : "- 특이 비정상 소견 없음"}
+
+<<현재체액상태>>
+Na(S)=${fmt(d.na)}, Sosm=${mark(sosm, 275, 295)}
+BUN/Cr.=${fmt(buncr)}
+TotalCO2=${fmt(d.co2)}
+AG=${fmt(ag)}
+Cl(S)=${fmt(d.cl)}`;
+
+    const interp = [];
+
+    if (d.na < 136) interp.push("1.전해질상태\n- 저나트륨혈증 소견으로 체액상태 평가 필요.");
+    if (d.co2 < 22 || ag > 16) interp.push("2.산염기상태\n- 대사성 산증 가능성 평가 필요.");
+    if (d.cr > 0.98 || d.bun > 25) interp.push("3.신장기능\n- BUN/Creatinine 상승 여부 및 신기능 저하 평가 필요.");
+    if (d.crp > 0.5 || d.wbc > 10 || d.pct > 0.5) interp.push("4.염증/감염\n- 염증 또는 감염 가능성 있음.");
+    if (d.hb < 11.3) interp.push("5.혈액\n- 빈혈 소견 있음.");
+    if (d.alp > 120 || d.ggt > 64) interp.push("6.간담도\n- 간담도계 부하 가능성 있음.");
+
+    const block3 = `#${date}
+[검사결과임상해석]
+${interp.length ? interp.join("\n\n") : "- 특이 임상 이상 소견 뚜렷하지 않음."}
+
+[한줄요약]
+#${date}
+- 주요 검사 이상 소견에 따른 임상적 추적 필요.`;
+
+    setOutputs([block1, block2, block3]);
+  };
+
+  return (
+    <>
+      <h2>검사결과 정리</h2>
+
+      <input
+        type="file"
+        accept=".xlsx,.xls,.txt"
+        onChange={(e) => readFile(e.target.files[0])}
+      />
+
+      <textarea
+        style={styles.textarea}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="엑셀/텍스트 파일을 올리거나 검사결과를 붙여넣으세요"
+      />
+
+      <button style={styles.run} onClick={analyze}>정리하기</button>
+
+      <div style={styles.resultWrap}>
+        {outputs.map((o, i) => (
+          <pre key={i} style={styles.resultBox}>{o}</pre>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -341,6 +271,7 @@ const styles = {
   textarea: {
     width: "100%",
     minHeight: "230px",
+    marginTop: "14px",
     fontSize: "15px",
     padding: "12px",
     boxSizing: "border-box",
@@ -353,12 +284,12 @@ const styles = {
     padding: "12px 22px",
     cursor: "pointer",
   },
-  resultArea: {
+  resultWrap: {
     marginTop: "24px",
     display: "grid",
     gap: "18px",
   },
-  result: {
+  resultBox: {
     background: "#f1f5f9",
     border: "1px solid #d8e1ea",
     padding: "16px",
@@ -366,10 +297,5 @@ const styles = {
     lineHeight: "1.55",
     overflowX: "hidden",
     fontSize: "14px",
-  },
-  ready: {
-    textAlign: "center",
-    padding: "60px",
-    color: "#666",
   },
 };
