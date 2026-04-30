@@ -267,7 +267,16 @@ function extractPatientInfo(text, filename = "") {
   const lines = cleanLines(text);
   const compact = lines.join(" ");
   const chart = valueAfterLabel(lines, "차트번호") || "차트번호미상";
-  const name = (valueAfterLabel(lines, "수진자명") || "환자명미상").replace(/\s+/g, "");
+ let name = (valueAfterLabel(lines, "수진자명") || "").replace(/\s+/g, "");
+
+if (!name || name.length < 2) {
+  const idx = lines.findIndex(l => l.includes("수진자명"));
+  if (idx !== -1 && lines[idx + 1]) {
+    name = lines[idx + 1].replace(/\s+/g, "");
+  }
+}
+
+if (!name) name = "환자명미상";
   const ageSexMatch = compact.match(/(\d{1,3})\s*\/\s*(M|F)/i);
   const age = ageSexMatch ? ageSexMatch[1] : "";
   const sex = ageSexMatch ? ageSexMatch[2].toUpperCase() : "";
