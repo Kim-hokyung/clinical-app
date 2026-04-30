@@ -271,11 +271,21 @@ let name = "";
 
 const raw = lines.join(" ");
 
-const m = raw.match(/주치의\s*([가-힣]{2,4})/);
+const m = raw.match(/([가-힣]{2,4})\s+주치의/);
 
 if (m) {
   name = m[1];
 }
+ 
+/* 👉 여기 ↓ 추가 */
+if (!name || name === "환자명미상") {
+  const m2 = raw.match(/\d{1,3}\s*\/\s*[MF]\s*([가-힣]{2,4})/i);
+  if (m2) {
+    name = m2[1];
+  }
+}
+  
+  
 
 if (!name) name = "환자명미상";
 
