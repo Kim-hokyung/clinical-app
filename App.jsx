@@ -267,27 +267,12 @@ function extractPatientInfo(text, filename = "") {
   const lines = cleanLines(text);
   const compact = lines.join(" ");
   const chart = valueAfterLabel(lines, "차트번호") || "차트번호미상";
-let name = (valueAfterLabel(lines, "수진자명") || "").replace(/\s+/g, "");
+let name = "";
 
-// 1차: 다음 줄 확인
-if (!name || name.includes("기관") || name.includes("주치의") || name.length < 2) {
-  const idx = lines.findIndex(l => l.includes("수진자명"));
-  if (idx !== -1 && lines[idx + 1]) {
-    name = lines[idx + 1].replace(/\s+/g, "");
-  }
+const nameMatch = lines.join(" ").match(/생년월일\s*\d{4}-\d{2}-\d{2}\s+([가-힣]{2,4})/);
+if (nameMatch) {
+  name = nameMatch[1];
 }
-
-// 2차: 전체 텍스트에서 재검색
-if (!name || name.includes("기관") || name.includes("주치의") || name.length < 2) {
-  const raw = lines.join(" ");
-  const m = raw.match(/수진자명\s*([가-힣]{2,5})/);
-  if (m) {
-    name = m[1];
-  }
-}
-
-// 최종 fallback
-if (!name) name = "환자명미상";
 
   const ageSexMatch = compact.match(/(\d{1,3})\s*\/\s*(M|F)/i);
   const age = ageSexMatch ? ageSexMatch[1] : "";
