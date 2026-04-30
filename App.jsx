@@ -1,301 +1,261 @@
 import React, { useState } from "react";
 import * as XLSX from "xlsx";
 
+const today = () => new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
+const slash = (d) => d.replaceAll("-", "/");
+
+function val(text, keys) {
+  for (const key of keys) {
+    const r = new RegExp(`${key}[^\\n\\d.-]*([<>]?[0-9]+\\.?[0-9]*)`, "i");
+    const m = text.match(r);
+    if (m) return Number(m[1].replace(/[<>]/g, ""));
+  }
+  return "";
+}
+
+function str(text, keys) {
+  for (const key of keys) {
+    const r = new RegExp(`${key}[^\\n]*`, "i");
+    const m = text.match(r);
+    if (m) return m[0];
+  }
+  return "";
+}
+
+const f = (v, n = 1) => v === "" || isNaN(v) ? "" : Number(v).toFixed(n).replace(/\.0$/, "");
+const mark = (v, low, high) => v === "" ? "" : v < low ? `${f(v)} ▼` : v > high ? `${f(v)} ▲` : f(v);
+
+function parse(text) {
+  return {
+    protein: val(text, ["Protein, total", "Protein"]),
+    albumin: val(text, ["Albumin\\(S\\)", "Albumin"]),
+    bili: val(text, ["Bilirubin, total"]),
+    ast: val(text, ["AST\\(SGOT\\)", "AST"]),
+    alt: val(text, ["ALT\\(SGPT\\)", "ALT"]),
+    alp: val(text, ["ALP", "Alkaline"]),
+    ggt: val(text, ["γ-GT", "GGT", "r-GT"]),
+    chol: val(text, ["Cholesterol, total"]),
+    tg: val(text, ["Triglyceride"]),
+    glucose: val(text, ["Glucose\\(S\\)", "Glucose"]),
+    na: val(text, ["Na\\(Sodium\\)", "Na\\(S\\)", "Na"]),
+    k: val(text, ["K\\(Potassium\\)", "K\\(S\\)", "K"]),
+    cl: val(text, ["Cl\\(Chloride\\)", "Cl\\(S\\)", "Cl"]),
+    mg: val(text, ["Mg\\(Magnesium\\)", "Mg"]),
+    ca: val(text, ["Ionized Ca", "Ca"]),
+    p: val(text, ["Inorganic phosphorus", "Phosphorus"]),
+    nau: val(text, ["Na\\(U\\)"]),
+    ku: val(text, ["K\\(U\\)"]),
+    clu: val(text, ["Cl\\(U\\)"]),
+    bun: val(text, ["BUN\\(S\\)", "BUN"]),
+    cr: val(text, ["Creatinine\\(S\\)", "Creatinine"]),
+    bunu: val(text, ["BUN\\(U\\)"]),
+    cru: val(text, ["Creatinine\\(U\\)"]),
+    co2: val(text, ["Total CO2", "TotalCO2"]),
+    crp: val(text, ["CRP\\(정량\\)", "CRP"]),
+    pct: val(text, ["Procalcitonin"]),
+    lactate: val(text, ["Lactic acid", "Lactate"]),
+    wbc: val(text, ["WBC"]),
+    rbc: val(text, ["RBC"]),
+    plt: val(text, ["Platelet"]),
+    hb: val(text, ["Hb"]),
+    hct: val(text, ["Hct"]),
+    mcv: val(text, ["MCV"]),
+    mch: val(text, ["MCH"]),
+    mchc: val(text, ["MCHC"]),
+    seg: val(text, ["Seg neutrophil", "Seg"]),
+    lymph: val(text, ["Lymphocyte"]),
+    mono: val(text, ["Monocyte"]),
+    eos: val(text, ["Eosinophil"]),
+    baso: val(text, ["Basophil"]),
+    nrbc: val(text, ["N-RBC"]),
+    blast: val(text, ["Blast"]),
+    phu: val(text, ["pH\\(U\\)"]),
+    sg: val(text, ["Specific Gravity\\(U\\)", "SG\\(U\\)"]),
+    uosm: val(text, ["Osmolality\\(U\\)", "Uosm"]),
+    bloodu: str(text, ["Blood\\(U\\)"]),
+    wbcu: str(text, ["WBC\\(U\\)"]),
+    urob: str(text, ["Urobilinogen\\(U\\)"]),
+    nitrite: str(text, ["Nitrite\\(U\\)"]),
+    ketone: str(text, ["Ketone\\(U\\)"]),
+    proteinU: str(text, ["Protein\\(U\\)"]),
+    urbc: str(text, ["요침사\\(RBC\\)"]),
+    uwbc: str(text, ["요침사\\(WBC\\)"]),
+    ep: str(text, ["요침사\\(EP Cell\\)", "요침사\\(EPCell\\)"]),
+    cast: str(text, ["요침사\\(Cast\\)"]),
+    bacteria: str(text, ["요침사\\(Bacteria\\)"]),
+  };
+}
+
+function pick(line) {
+  if (!line) return "";
+  const m = line.match(/(Negative|Trace|Positive|[0-9]+ Positive|Many|[0-9]~[0-9]|Not Found|Bacteria are seen)/i);
+  return m ? m[0] : "";
+}
+
+function calc(d) {
+  return {
+    sosm: d.na && d.glucose && d.bun ? 2 * d.na + d.glucose / 18 + d.bun / 2.8 : "",
+    buncr: d.bun && d.cr ? d.bun / d.cr : "",
+    fena: d.nau && d.cr && d.na && d.cru ? (d.nau * d.cr) / (d.na * d.cru) * 100 : "",
+    feu: d.bunu && d.cr && d.bun && d.cru ? (d.bunu * d.cr) / (d.bun * d.cru) * 100 : "",
+    ag: d.na && d.cl && d.co2 ? d.na - (d.cl + d.co2) : "",
+    uag: d.nau && d.ku && d.clu ? d.nau + d.ku - d.clu : "",
+  };
+}
+
+function report(d, c, date) {
+  return `#${date}
+◆최종결과보고◆(검체채취일:${slash(date)})
+▶임상화학검사
+Protein:Albumin=${mark(d.protein,6.6,8.3)}/${mark(d.albumin,3.5,5.2)}
+Bilirubin,total=${f(d.bili)}
+AST:ALT=${mark(d.ast,0,40)}/${mark(d.alt,0,40)}
+ALP:γ-GT=${mark(d.alp,30,120)}/${mark(d.ggt,0,64)}
+Cholesterol,total:Triglyceride=${f(d.chol)}/${mark(d.tg,0,150)}
+Glucose:${mark(d.glucose,60,100)}
+Na:K:Cl=${mark(d.na,136,146)}/${mark(d.k,3.5,5.1)}/${mark(d.cl,101,109)}
+Mg:Ca²⁺:P=${mark(d.mg,1.6,2.6)}/${mark(d.ca,1.16,1.32)}/${mark(d.p,2.5,4.5)}
+Na(U):K(U):Cl(U)=${f(d.nau)}/${f(d.ku)}/${f(d.clu)}
+BUN:Creatinine=${mark(d.bun,7.9,25)}/${mark(d.cr,0.55,0.98)}
+BUN(U):Creatinine(U)=${f(d.bunu)}/${f(d.cru)}
+TotalCO2:${mark(d.co2,22,29)}
+CRP:Procalcitonin=${mark(d.crp,0,0.5)}/${mark(d.pct,0,0.5)}
+Lactic acid=${f(d.lactate)}
+▶진단혈액검사
+RBC:WBC:Platelet=${mark(d.rbc,3.7,5.2)}/${mark(d.wbc,4,10)}/${mark(d.plt,150,450)}
+Hb:Hct=${mark(d.hb,11.3,15)}/${mark(d.hct,32,44)}
+MCV:MCH:MCHC=${mark(d.mcv,80,99.9)}/${mark(d.mch,25.7,33)}/${mark(d.mchc,32,36)}
+WBC:${f(d.wbc)}/Seg:Neutrophil ${mark(d.seg,41.7,75)}
+Lymphocyte:Monocyte:Eosinophil:Basophil=${mark(d.lymph,18.4,45)}/${f(d.mono)}/${f(d.eos)}/${f(d.baso)}
+N-RBC:Blast=${f(d.nrbc)}/${f(d.blast)}
+▶뇨화학및검경검사
+1.Routineurine(10종)
+pH(U) ${f(d.phu)},SG(U):${f(d.sg,3)}
+Blood(U):${pick(d.bloodu)}/WBC(U):${pick(d.wbcu)}/Urobilinogen(U):${pick(d.urob)}
+Nitrite(U):${pick(d.nitrite)}
+Ketone(U)=${pick(d.ketone)}
+Protein(U)=${pick(d.proteinU)}
+2.요침사검사
+요침사(RBC):${pick(d.urbc)}/요침사(WBC):${pick(d.uwbc)}/요침사(EPCell):${pick(d.ep)}
+요침사(Cast):${pick(d.cast)}/요침사(Bacteria):${pick(d.bacteria)}`;
+}
+
+function summary(d, c, date) {
+  const abn = [];
+  if (d.protein < 6.6 || d.albumin < 3.5) abn.push(`- Protein/Albumin: ${mark(d.protein,6.6,8.3)} / ${mark(d.albumin,3.5,5.2)}`);
+  if (d.alp > 120 || d.ggt > 64) abn.push(`- ALP/γ-GT: ${mark(d.alp,30,120)} / ${mark(d.ggt,0,64)}`);
+  if (d.crp > 0.5 || d.wbc > 10) abn.push(`- WBC/CRP: ${mark(d.wbc,4,10)} / ${mark(d.crp,0,0.5)}`);
+  if (d.hb < 11.3) abn.push(`- Hb/Hct: ${mark(d.hb,11.3,15)} / ${mark(d.hct,32,44)}`);
+  if (d.na < 136) abn.push(`- Na: ${mark(d.na,136,146)}`);
+  if (d.co2 < 22) abn.push(`- TotalCO2: ${mark(d.co2,22,29)}`);
+
+  return `#${date}
+◆비정상 수치 요약◆
+▶임상화학 및 혈액 비정상 소견
+${abn.length ? abn.join("\n") : "- 특이 비정상 소견 없음"}
+
+<<현재체액상태>>
+·Na(S)=${f(d.na)}, Sosm=${mark(c.sosm,275,295)}
+·Na(U)=${f(d.nau)}, Uosm=${f(d.uosm)}
+·SG(U)=${f(d.sg,3)}, pH(U)=${f(d.phu)}
+·BUN/Cr.=${f(c.buncr)}
+·FENa=${f(c.fena,2)}%, FEUrea=${f(c.feu,2)}%
+·TotalCO2=${f(d.co2)}
+·Lactic acid:${f(d.lactate)} , Ketone(U): ${pick(d.ketone)}
+·AG(anion gap)=${f(c.ag)}
+·uAG(urine aniongap)=${mark(c.uag,-999,0)}
+·Cl(S):Cl(U)=${f(d.cl)}:${f(d.clu)}`;
+}
+
+function interpretation(d, c, date) {
+  const parts = [];
+  if (d.na < 136) parts.push(`1.전해질상태\n- 저나트륨혈증 소견으로 체액상태 및 원인 평가 필요.`);
+  if (d.co2 < 22 || c.ag > 16) parts.push(`2.산염기상태\n- TotalCO2 및 AG 기준 대사성 산증 가능성 평가 필요.`);
+  if (d.cr > 0.98 || c.fena > 2 || c.feu > 50) parts.push(`3.신장기능\n- Cr/BUN 및 FENa, FEUrea 기준 신장성 원인 감별 필요.`);
+  if (pick(d.wbcu) || pick(d.bacteria) || pick(d.nitrite)) parts.push(`4.소변검사\n- 요검사 이상 소견 확인되며 요로감염 여부 평가 필요.`);
+  if (d.alp > 120 || d.ggt > 64) parts.push(`5.간담도\n- ALP/γ-GT 상승으로 간담도계 부하 가능성.`);
+  if (d.crp > 0.5 || d.pct > 0.5 || d.wbc > 10) parts.push(`6.종합임상판단\n- 염증/감염 소견 동반되어 임상증상과 배양검사 확인 필요.`);
+
+  return `#${date}
+[검사결과임상해석]
+${parts.length ? parts.join("\n\n") : "- 특이 임상 이상 소견 뚜렷하지 않음."}
+
+[한줄요약]
+#${date}
+- 주요 검사 이상 소견에 따른 임상적 추적 필요.`;
+}
+
+function ResultBox({ title, text }) {
+  const copy = () => navigator.clipboard.writeText(text);
+  return (
+    <div style={styles.box}>
+      <div style={styles.boxTop}>
+        <b>{title}</b>
+        <button onClick={copy} style={styles.copy}>복사</button>
+      </div>
+      <pre style={styles.pre}>{text}</pre>
+    </div>
+  );
+}
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState("lab");
+  const [text, setText] = useState("");
+  const [out, setOut] = useState([]);
+
+  const readFile = async (file) => {
+    if (!file) return;
+    const name = file.name.toLowerCase();
+    if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      let t = "";
+      wb.SheetNames.forEach(s => {
+        XLSX.utils.sheet_to_json(wb.Sheets[s], { header: 1 }).forEach(r => t += r.join(" ") + "\n");
+      });
+      setText(t);
+    } else if (name.endsWith(".txt")) {
+      setText(await file.text());
+    } else {
+      alert("엑셀(.xlsx/.xls) 또는 텍스트(.txt)만 지원합니다.");
+    }
+  };
+
+  const run = () => {
+    const d = parse(text);
+    const c = calc(d);
+    const date = today();
+    setOut([
+      ["최종결과보고", report(d, c, date)],
+      ["비정상 수치 요약 및 현재체액상태", summary(d, c, date)],
+      ["검사결과 임상해석", interpretation(d, c, date)],
+    ]);
+  };
 
   return (
     <div style={styles.page}>
       <header style={styles.header}>
         <h1>Clinical Assistant</h1>
-        <p>임상검사 · 균배양 · 초진차트 · 진단서류 · 약품정리</p>
+        <p>검사결과 · 균배양 · 초진차트 · 진단서류 · 약품정리</p>
       </header>
-
-      <nav style={styles.nav}>
-        {[
-          ["lab", "검사결과"],
-          ["culture", "균배양"],
-          ["chart", "초진차트"],
-          ["doc", "진단서류"],
-          ["drug", "약품정리"],
-        ].map(([key, label]) => (
-          <button
-            key={key}
-            onClick={() => setActiveTab(key)}
-            style={activeTab === key ? styles.activeBtn : styles.btn}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
-
       <main style={styles.card}>
-        {activeTab === "lab" && <LabAnalyzer />}
-        {activeTab !== "lab" && (
-          <div style={styles.ready}>
-            <h2>준비 중</h2>
-            <p>다음 단계에서 구현합니다.</p>
-          </div>
-        )}
+        <h2>검사결과 정리</h2>
+        <input type="file" accept=".xlsx,.xls,.txt" onChange={e => readFile(e.target.files[0])} />
+        <textarea style={styles.textarea} value={text} onChange={e => setText(e.target.value)} />
+        <button onClick={run} style={styles.run}>정리하기</button>
+        {out.map(([title, text], i) => <ResultBox key={i} title={title} text={text} />)}
       </main>
     </div>
   );
 }
 
-function LabAnalyzer() {
-  const [text, setText] = useState("");
-  const [outputs, setOutputs] = useState([]);
-
-  const today = () => {
-    const now = new Date();
-    const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-    return kst.toISOString().slice(0, 10);
-  };
-
-  const slash = (d) => d.replaceAll("-", "/");
-
-  const readFile = async (file) => {
-    if (!file) return;
-
-    const name = file.name.toLowerCase();
-
-    if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
-      const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: "array" });
-
-      let allText = "";
-      workbook.SheetNames.forEach((sheetName) => {
-        const sheet = workbook.Sheets[sheetName];
-        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-        rows.forEach((row) => {
-          allText += row.join(" ") + "\n";
-        });
-      });
-
-      setText(allText);
-      return;
-    }
-
-    if (name.endsWith(".txt")) {
-      const t = await file.text();
-      setText(t);
-      return;
-    }
-
-    alert("현재는 엑셀(.xlsx/.xls) 또는 텍스트(.txt)만 지원합니다.");
-  };
-
-  const get = (names) => {
-    for (const name of names) {
-      const re = new RegExp(`${name}[^\\n\\d.-]*([<>]?[0-9.]+)`, "i");
-      const m = text.match(re);
-      if (m) return Number(String(m[1]).replace(/[<>]/g, ""));
-    }
-    return "";
-  };
-
-  const fmt = (v) => {
-    if (v === "" || v === null || Number.isNaN(v)) return "";
-    return Number(v).toFixed(2).replace(/\.00$/, "").replace(/0$/, "");
-  };
-
-  const mark = (v, low, high) => {
-    if (v === "") return "";
-    if (v < low) return `${fmt(v)} ▼`;
-    if (v > high) return `${fmt(v)} ▲`;
-    return fmt(v);
-  };
-
-  const analyze = () => {
-    const date = today();
-
-    const d = {
-      protein: get(["Protein, total", "Protein"]),
-      albumin: get(["Albumin\\(S\\)", "Albumin"]),
-      ast: get(["AST\\(SGOT\\)", "AST"]),
-      alt: get(["ALT\\(SGPT\\)", "ALT"]),
-      alp: get(["ALP", "Alkaline"]),
-      ggt: get(["γ-GT", "GGT", "r-GT"]),
-      glucose: get(["Glucose\\(S\\)", "Glucose"]),
-      na: get(["Na\\(Sodium\\)", "Na"]),
-      k: get(["K\\(Potassium\\)", "K"]),
-      cl: get(["Cl\\(Chloride\\)", "Cl"]),
-      bun: get(["BUN"]),
-      cr: get(["Creatinine"]),
-      co2: get(["Total CO2", "TotalCO2"]),
-      crp: get(["CRP\\(정량\\)", "CRP"]),
-      pct: get(["Procalcitonin"]),
-      lactate: get(["Lactic acid", "Lactate"]),
-      wbc: get(["WBC"]),
-      rbc: get(["RBC"]),
-      hb: get(["Hb"]),
-      hct: get(["Hct"]),
-      plt: get(["Platelet"]),
-    };
-
-    const ag = d.na && d.cl && d.co2 ? d.na - (d.cl + d.co2) : "";
-    const buncr = d.bun && d.cr ? d.bun / d.cr : "";
-    const sosm = d.na && d.glucose && d.bun ? 2 * d.na + d.glucose / 18 + d.bun / 2.8 : "";
-
-    const block1 = `#${date}
-◆최종결과보고◆(검체채취일:${slash(date)})
-▶임상화학검사
-Protein:Albumin=${mark(d.protein, 6.6, 8.3)}/${mark(d.albumin, 3.5, 5.2)}
-AST:ALT=${mark(d.ast, 0, 40)}/${mark(d.alt, 0, 40)}
-ALP:γ-GT=${mark(d.alp, 30, 120)}/${mark(d.ggt, 0, 64)}
-Glucose=${mark(d.glucose, 60, 100)}
-Na:K:Cl=${mark(d.na, 136, 146)}/${mark(d.k, 3.5, 5.1)}/${mark(d.cl, 101, 109)}
-BUN:Creatinine=${mark(d.bun, 7.9, 25)}/${mark(d.cr, 0.55, 0.98)}
-TotalCO2=${mark(d.co2, 22, 29)}
-CRP:Procalcitonin=${mark(d.crp, 0, 0.5)}/${mark(d.pct, 0, 0.5)}
-Lactic acid=${fmt(d.lactate)}
-▶진단혈액검사
-RBC:WBC:Platelet=${mark(d.rbc, 3.7, 5.2)}/${mark(d.wbc, 4, 10)}/${mark(d.plt, 150, 450)}
-Hb:Hct=${mark(d.hb, 11.3, 15)}/${mark(d.hct, 32, 44)}`;
-
-    const abnormal = [];
-
-    if (d.protein < 6.6 || d.albumin < 3.5)
-      abnormal.push(`- Protein/Albumin: ${mark(d.protein, 6.6, 8.3)} / ${mark(d.albumin, 3.5, 5.2)} (저단백/저알부민 소견)`);
-    if (d.alp > 120 || d.ggt > 64)
-      abnormal.push(`- ALP/γ-GT: ${mark(d.alp, 30, 120)} / ${mark(d.ggt, 0, 64)} (간담도계 부하 가능성)`);
-    if (d.crp > 0.5 || d.wbc > 10)
-      abnormal.push(`- WBC/CRP: ${mark(d.wbc, 4, 10)} / ${mark(d.crp, 0, 0.5)} (염증 반응 증가)`);
-    if (d.hb < 11.3)
-      abnormal.push(`- Hb/Hct: ${mark(d.hb, 11.3, 15)} / ${mark(d.hct, 32, 44)} (빈혈 소견)`);
-    if (d.na < 136)
-      abnormal.push(`- Na: ${mark(d.na, 136, 146)} (저나트륨혈증)`);
-    if (d.co2 < 22)
-      abnormal.push(`- TotalCO2: ${mark(d.co2, 22, 29)} (대사성 산증 의심)`);
-
-    const block2 = `#${date}
-◆비정상 수치 요약◆
-▶임상화학 및 혈액 비정상 소견
-${abnormal.length ? abnormal.join("\n") : "- 특이 비정상 소견 없음"}
-
-<<현재체액상태>>
-Na(S)=${fmt(d.na)}, Sosm=${mark(sosm, 275, 295)}
-BUN/Cr.=${fmt(buncr)}
-TotalCO2=${fmt(d.co2)}
-AG=${fmt(ag)}
-Cl(S)=${fmt(d.cl)}`;
-
-    const interp = [];
-
-    if (d.na < 136) interp.push("1.전해질상태\n- 저나트륨혈증 소견으로 체액상태 평가 필요.");
-    if (d.co2 < 22 || ag > 16) interp.push("2.산염기상태\n- 대사성 산증 가능성 평가 필요.");
-    if (d.cr > 0.98 || d.bun > 25) interp.push("3.신장기능\n- BUN/Creatinine 상승 여부 및 신기능 저하 평가 필요.");
-    if (d.crp > 0.5 || d.wbc > 10 || d.pct > 0.5) interp.push("4.염증/감염\n- 염증 또는 감염 가능성 있음.");
-    if (d.hb < 11.3) interp.push("5.혈액\n- 빈혈 소견 있음.");
-    if (d.alp > 120 || d.ggt > 64) interp.push("6.간담도\n- 간담도계 부하 가능성 있음.");
-
-    const block3 = `#${date}
-[검사결과임상해석]
-${interp.length ? interp.join("\n\n") : "- 특이 임상 이상 소견 뚜렷하지 않음."}
-
-[한줄요약]
-#${date}
-- 주요 검사 이상 소견에 따른 임상적 추적 필요.`;
-
-    setOutputs([block1, block2, block3]);
-  };
-
-  return (
-    <>
-      <h2>검사결과 정리</h2>
-
-      <input
-        type="file"
-        accept=".xlsx,.xls,.txt"
-        onChange={(e) => readFile(e.target.files[0])}
-      />
-
-      <textarea
-        style={styles.textarea}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="엑셀/텍스트 파일을 올리거나 검사결과를 붙여넣으세요"
-      />
-
-      <button style={styles.run} onClick={analyze}>정리하기</button>
-
-      <div style={styles.resultWrap}>
-        {outputs.map((o, i) => (
-          <pre key={i} style={styles.resultBox}>{o}</pre>
-        ))}
-      </div>
-    </>
-  );
-}
-
 const styles = {
-  page: {
-    minHeight: "100vh",
-    background: "#eef3f8",
-    fontFamily: "Arial, sans-serif",
-  },
-  header: {
-    background: "#1f3b5c",
-    color: "white",
-    padding: "24px",
-    textAlign: "center",
-  },
-  nav: {
-    display: "flex",
-    justifyContent: "center",
-    gap: "10px",
-    padding: "18px",
-    background: "white",
-  },
-  btn: {
-    background: "#e8eef5",
-    border: "1px solid #c9d6e2",
-    padding: "10px 18px",
-    cursor: "pointer",
-  },
-  activeBtn: {
-    background: "#1f3b5c",
-    color: "white",
-    border: "1px solid #1f3b5c",
-    padding: "10px 18px",
-    cursor: "pointer",
-  },
-  card: {
-    background: "white",
-    margin: "24px auto",
-    maxWidth: "1050px",
-    padding: "24px",
-    borderRadius: "12px",
-    boxShadow: "0 4px 18px rgba(0,0,0,0.08)",
-  },
-  textarea: {
-    width: "100%",
-    minHeight: "230px",
-    marginTop: "14px",
-    fontSize: "15px",
-    padding: "12px",
-    boxSizing: "border-box",
-  },
-  run: {
-    marginTop: "14px",
-    background: "#2b8fd8",
-    color: "white",
-    border: "none",
-    padding: "12px 22px",
-    cursor: "pointer",
-  },
-  resultWrap: {
-    marginTop: "24px",
-    display: "grid",
-    gap: "18px",
-  },
-  resultBox: {
-    background: "#f1f5f9",
-    border: "1px solid #d8e1ea",
-    padding: "16px",
-    whiteSpace: "pre-wrap",
-    lineHeight: "1.55",
-    overflowX: "hidden",
-    fontSize: "14px",
-  },
+  page: { background: "#eef3f8", minHeight: "100vh", fontFamily: "Arial" },
+  header: { background: "#1f3b5c", color: "white", padding: 28, textAlign: "center" },
+  card: { background: "white", maxWidth: 1100, margin: "28px auto", padding: 26, borderRadius: 12 },
+  textarea: { width: "100%", height: 220, marginTop: 14, padding: 12, boxSizing: "border-box" },
+  run: { marginTop: 14, background: "#2b8fd8", color: "white", border: 0, padding: "12px 22px" },
+  box: { marginTop: 22, background: "#f1f5f9", border: "1px solid #d8e1ea" },
+  boxTop: { display: "flex", justifyContent: "space-between", padding: 10, background: "#e2e8f0" },
+  copy: { padding: "6px 12px" },
+  pre: { padding: 16, whiteSpace: "pre-wrap", overflowX: "hidden", lineHeight: 1.55, fontSize: 14 },
 };
