@@ -269,8 +269,7 @@ function extractPatientInfo(text, filename = "") {
   const chart = chartMatch ? chartMatch[1] : "차트번호미상";
 
   // 이름
- const nameMatch = compact.match(/수진자명\s*([가-힣]{2,5})/) 
-               || compact.match(/수진자명([가-힣]{2,5})/);
+const nameMatch = compact.match(/수진자명\s*([가-힣]{2,5})/) || compact.match(/수진자명([가-힣]{2,5})/);
   const name = nameMatch ? nameMatch[1] : "환자명미상";
 
   // 나이/성별
