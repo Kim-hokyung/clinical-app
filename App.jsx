@@ -271,14 +271,10 @@ let name = "";
 
 const raw = lines.join(" ");
 
-const candidates = raw.match(/[가-힣]{2,4}/g) || [];
+const m = raw.match(/주치의\s*([가-힣]{2,4})/);
 
-const filtered = candidates.filter(w =>
-  !["주치의", "기관", "결과", "보고", "검체", "배양", "동정", "균주"].includes(w)
-);
-
-if (filtered.length > 0) {
-  name = filtered[0];
+if (m) {
+  name = m[1];
 }
 
 if (!name) name = "환자명미상";
