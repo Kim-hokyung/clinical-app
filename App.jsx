@@ -639,8 +639,34 @@ export default function App() {
       </div>
 
       <main style={styles.card}>
-        {activeTab === "lab" && (
-          <>
+       {activeTab === "culture" && (
+  <>
+    <h2>균배양 PDF 테스트</h2>
+
+    <input
+      type="file"
+      multiple
+      accept="application/pdf"
+      onChange={async (e) => {
+        const files = e.target.files;
+        let text = "";
+
+        for (const file of files) {
+          const buf = await file.arrayBuffer();
+          const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const content = await page.getTextContent();
+            text += content.items.map(i => i.str).join("\n") + "\n";
+          }
+        }
+
+        alert(text.slice(0, 500)); // 확인용
+      }}
+    />
+  </>
+)}
             <h2>검사결과 정리</h2>
             <input type="file" accept=".xlsx,.xls,.txt" onChange={(e) => readFile(e.target.files[0])} />
             <textarea
