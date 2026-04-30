@@ -174,10 +174,8 @@ N-RBC:Blast=${f(d.nrbc)}/${f(d.blast)}
 ▶뇨화학및검경검사
 1.Routineurine(10종)
 pH(U) ${f(d.phu)},SG(U):${f(d.sg,3)}
-Blood(U):${urineValue(d.bloodu)}/WBC(U):${urineValue(d.wbcu)}/Urobilinogen(U):${urineValue(d.urob)}
-Nitrite(U):${urineValue(d.nitrite)}
-Ketone(U):${urineValue(d.ketone)}
-Protein(U):${urineValue(d.proteinU)}
+Blood(U):${urineValue(d.bloodu)} / WBC(U):${urineValue(d.wbcu)} / Urobilinogen(U):${urineValue(d.urob)}
+Nitrite(U):${urineValue(d.nitrite)} , Ketone(U):${urineValue(d.ketone)} , Protein(U):${urineValue(d.proteinU)}\n
 2.요침사검사
 요침사(RBC):${urineValue(d.urbc)}/요침사(WBC):${urineValue(d.uwbc)}/요침사(EPCell):${urineValue(d.ep)}
 요침사(Cast):${urineValue(d.cast)}/요침사(Bacteria):${urineValue(d.bacteria)}`;
