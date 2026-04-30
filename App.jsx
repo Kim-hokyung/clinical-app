@@ -264,22 +264,33 @@ function normalizeCultureText(text) {
 function extractPatientInfo(text, filename = "") {
   const compact = text.replace(/\s+/g, " ");
 
-  const chart =
-    pick([/차트번호\s*([0-9-]+)/, /차트\s*번호\s*([0-9-]+)/], compact, "") ||
-    pick([/(\d{2}-\d{7})/], compact, "차트번호미상");
+  // 차트번호
+  const chartMatch = compact.match(/차트번호\s*([0-9-]+)/);
+  const chart = chartMatch ? chartMatch[1] : "차트번호미상";
 
-  const name =
-    pick([/수진자명\s*([가-힣]{2,4})/], compact, "") ||
-    pick([/주\s*치\s*의\s*([가-힣]{2,4})/], compact, "환자명미상");
+  // 이름
+  const nameMatch = compact.match(/수진자명\s*([가-힣]{2,4})/);
+  const name = nameMatch ? nameMatch[1] : "환자명미상";
 
-  const dm =
-    compact.match(/검체채취일\s*(\d{4})[./-](\d{2})[./-](\d{2})/) ||
-    compact.match(/검체\s*채취일\s*(\d{4})[./-](\d{2})[./-](\d{2})/) ||
-    compact.match(/(\d{4})[./-](\d{2})[./-](\d{2})/);
+  // 나이/성별
+  const ageSexMatch = compact.match(/(\d{2,3})\s*\/?\s*(M|F)/i);
+  const age = ageSexMatch ? ageSexMatch[1] : "";
+  const sex = ageSexMatch ? ageSexMatch[2].toUpperCase() : "";
 
-  const date = dm ? `${dm[1]}-${dm[2]}-${dm[3]}` : today();
+  // 날짜
+  const dateMatch = compact.match(/검체채취일\s*(\d{4})[./-](\d{2})[./-](\d{2})/);
+  const date = dateMatch
+    ? `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`
+    : today();
 
-  return { chart, name, date, filename };
+  return {
+    chart,
+    name,
+    age,
+    sex,
+    date,
+    filename,
+  };
 }
 
 function extractSpecimen(text) {
