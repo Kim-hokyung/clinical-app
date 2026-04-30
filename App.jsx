@@ -233,317 +233,180 @@ ${parts.length ? parts.join("\n") : "- 특이 임상 이상 소견 뚜렷하지 
 async function readPdfText(file) {
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-
   let fullText = "";
-
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
     const pageText = content.items.map((item) => item.str).join("\n");
     fullText += "\n" + pageText;
   }
-
   return fullText;
 }
 
-function pick(patterns, text, fallback = "") {
-  for (const p of patterns) {
-    const m = text.match(p);
-    if (m) return (m[1] || "").trim();
-  }
-  return fallback;
+function cleanLines(text) {
+  return text.replace(/\r/g, "\n").split("\n").map((x) => x.trim()).filter(Boolean);
 }
 
-function normalizeCultureText(text) {
-  return text
-    .replace(/\r/g, "\n")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n");
-}
-
-function extractPatientInfo(text, filename = "") {
-  const compact = text.replace(/\s+/g, " ");
-
-  // 차트번호
-  const chartMatch = compact.match(/차트번호\s*([0-9-]+)/);
-  const chart = chartMatch ? chartMatch[1] : "차트번호미상";
-
-  // 이름
-const nameMatch = compact.match(/수진자명\s*([가-힣]{2,5})/) || compact.match(/수진자명([가-힣]{2,5})/);
-  const name = nameMatch ? nameMatch[1] : "환자명미상";
-
-  // 나이/성별
-  const ageSexMatch = compact.match(/(\d{2,3})\s*\/?\s*(M|F)/i);
-  const age = ageSexMatch ? ageSexMatch[1] : "";
-  const sex = ageSexMatch ? ageSexMatch[2].toUpperCase() : "";
-
-  // 날짜
-  const dateMatch = compact.match(/검체채취일\s*(\d{4})[./-](\d{2})[./-](\d{2})/);
-  const date = dateMatch
-    ? `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`
-    : today();
-
-  return {
-    chart,
-    name,
-    age,
-    sex,
-    date,
-    filename,
-  };
-}
-
-function extractSpecimen(text) {
-  const compact = text.replace(/\s+/g, " ");
-  const m = compact.match(/검\s*체\s*(Random Urine|Rectal Swab|Nasal Swab|Sputum|Blood|Urine|Stool|Wound|Throat Swab)/i);
-  if (m) return m[1].trim();
-  if (/Random Urine/i.test(text)) return "Random Urine";
-  if (/Rectal Swab/i.test(text)) return "Rectal Swab";
-  if (/Nasal Swab/i.test(text)) return "Nasal Swab";
-  if (/Sputum/i.test(text)) return "Sputum";
-  if (/Blood/i.test(text)) return "Blood";
-  if (/Urine/i.test(text)) return "Urine";
-  return "검체 확인 필요";
-}
-
-function extractOrganismNames(text) {
-  const names = [];
-  const known = [
-    "Klebsiella pneumoniae",
-    "Acinetobacter baumannii",
-    "Pseudomonas aeruginosa",
-    "Staphylococcus aureus",
-    "Escherichia coli",
-    "Enterococcus faecium",
-    "Enterococcus faecalis",
-    "Proteus mirabilis",
-    "Enterobacter cloacae",
-    "Serratia marcescens",
-    "Streptococcus pneumoniae",
-    "Salmonella",
-    "Shigella",
-    "Vibrio",
-  ];
-
-  known.forEach((k) => {
-    const re = new RegExp(k.replace(/ /g, "\\s+"), "i");
-    if (re.test(text) && !names.includes(k)) names.push(k);
-  });
-
-  return names;
-}
-
-function extractResistanceLabel(org, section, sList, rCount) {
-  if (/MRSA|Methicillin Resistant Staphylococcus aureus/i.test(section) && /Staphylococcus aureus/i.test(org)) return "MRSA";
-  if (/MRPA|Multidrug resistant Pseudomonas aeruginosa/i.test(section) && /Pseudomonas aeruginosa/i.test(org)) return "MRPA";
-  if (/MRAB|Multidrug resistant Acinetobacter baumannii/i.test(section) && /Acinetobacter baumannii/i.test(org)) return "MRAB";
-  if (/CRE|Carbapenem-Resistant Enterobacteriaceae/i.test(section) && /Klebsiella|Escherichia|Enterobacter/i.test(org)) return "CRE";
-
-  if (/Klebsiella|Escherichia|Enterobacter/i.test(org) && rCount >= 8) return "CRE";
-  if (/Acinetobacter baumannii/i.test(org) && rCount >= 8) return "MRAB";
-  if (/Pseudomonas aeruginosa/i.test(org) && rCount >= 8) return "MRPA";
-  if (/Staphylococcus aureus/i.test(org) && rCount >= 5) return "MRSA";
-
-  return "";
-}
-
-function extractDrugResultsForOrg(text, org, index, allOrgs) {
-  const lines = text.split(/\n/).map((x) => x.trim()).filter(Boolean);
-  const startPatterns = [
-    new RegExp(`균주\\s*${index + 1}\\s*[:：]\\s*${org.replace(/ /g, "\\s+")}`, "i"),
-    new RegExp(org.replace(/ /g, "\\s+"), "i"),
-  ];
-
-  let start = -1;
+function valueAfterLabel(lines, label) {
+  const bad = /^(의뢰기관|기관기호|차트번호|주\s*치\s*의|수진자명|진료과|생년월일|병\s*동|검체채취일|검사의뢰일|검사보고일|검체번호|검\s*체|일상정보)/;
   for (let i = 0; i < lines.length; i++) {
-    if (startPatterns.some((p) => p.test(lines[i]))) {
-      start = i;
-      break;
-    }
-  }
-
-  let end = lines.length;
-  if (start >= 0) {
-    for (let i = start + 1; i < lines.length; i++) {
-      const otherOrg = allOrgs.find((o) => o !== org && new RegExp(o.replace(/ /g, "\\s+"), "i").test(lines[i]));
-      if (otherOrg && /균주|결과|항생제/i.test(lines[i])) {
-        end = i;
-        break;
+    const line = lines[i].replace(/\s+/g, " ");
+    if (new RegExp(label).test(line)) {
+      const after = line.replace(new RegExp(`.*${label}\\s*`), "").trim();
+      if (after && !bad.test(after)) return after;
+      for (let j = i + 1; j < Math.min(i + 6, lines.length); j++) {
+        const v = lines[j].replace(/\s+/g, " ").trim();
+        if (v && !bad.test(v)) return v;
       }
     }
   }
+  return "";
+}
 
-  const section = start >= 0 ? lines.slice(start, end).join("\n") : text;
-  const sList = [];
-  let rCount = 0;
+function extractPatientInfo(text, filename = "") {
+  const lines = cleanLines(text);
+  const compact = lines.join(" ");
+  const chart = valueAfterLabel(lines, "차트번호") || "차트번호미상";
+  const name = valueAfterLabel(lines, "수진자명") || "환자명미상";
+  const ageSexMatch = compact.match(/(\d{1,3})\s*\/\s*(M|F)/i);
+  const age = ageSexMatch ? ageSexMatch[1] : "";
+  const sex = ageSexMatch ? ageSexMatch[2].toUpperCase() : "";
+  const dateMatch = compact.match(/검체채취일\s*(\d{4})[./-](\d{2})[./-](\d{2})/) || compact.match(/(\d{4})[./-](\d{2})[./-](\d{2})/);
+  const date = dateMatch ? `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}` : today();
+  return { chart, name, age, sex, date, filename };
+}
 
-  const drugLineRegex = /^([A-Za-z][A-Za-z\-/ ]{2,40})\s+(?:[<>=]*\s*[0-9.]+)?\s*([SIR])$/i;
+function extractSpecimen(text) {
+  const lines = cleanLines(text);
+  const fromLabel = valueAfterLabel(lines, "검\\s*체");
+  const compact = `${fromLabel} ${lines.join(" ")}`;
+  if (/Random Urine/i.test(compact)) return "Random Urine";
+  if (/Rectal Swab/i.test(compact)) return "Rectal Swab";
+  if (/Nasal Swab/i.test(compact)) return "Nasal Swab";
+  if (/Sputum/i.test(compact)) return "Sputum";
+  if (/Blood/i.test(compact)) return "Blood";
+  if (/Urine/i.test(compact)) return "Random Urine";
+  return "검체 확인 필요";
+}
 
-  section.split(/\n/).forEach((line) => {
-    const m = line.trim().match(drugLineRegex);
-    if (!m) return;
+const knownOrganisms = ["Pseudomonas aeruginosa", "Klebsiella pneumoniae", "Acinetobacter baumannii", "Staphylococcus aureus", "Serratia marcescens", "Escherichia coli", "Enterococcus faecium", "Enterococcus faecalis", "Proteus mirabilis", "Enterobacter cloacae"];
+const antibiotics = ["Amikacin", "Ampicillin/Sulbactam", "Aztreonam", "Cefazolin", "Cefepime", "Cefotaxime", "Ceftazidime", "Ceftriaxone", "Ciprofloxacin", "Clindamycin", "Ertapenem", "Erythromycin", "Gentamicin", "Imipenem", "Levofloxacin", "Linezolid", "Meropenem", "Minocycline", "Nitrofurantoin", "Oxacillin", "Piperacillin", "Piperacillin/Tazobactam", "Rifampicin", "Teicoplanin", "Tetracycline", "Tigecycline", "Tobramycin", "Trimethoprim/Sulfamethoxazole", "Vancomycin", "Amoxicillin/Clavulanic Acid", "Benzylpenicillin"];
 
-    const drug = m[1].trim().replace(/\s+/g, " ");
-    const result = m[2].toUpperCase();
+function extractOrganismNames(text) {
+  const found = [];
+  for (const org of knownOrganisms) {
+    const re = new RegExp(org.replaceAll(" ", "\\s+"), "i");
+    if (re.test(text) && !found.includes(org)) found.push(org);
+  }
+  return found;
+}
 
-    if (["MIC", "결과", "항생제"].some((bad) => drug.includes(bad))) return;
-    if (result === "S" && !sList.includes(drug)) sList.push(drug);
-    if (result === "R") rCount++;
-  });
+function getResistanceLabel(org, text, rCount) {
+  if (/Pseudomonas aeruginosa/i.test(org) && (/MRPA|Multidrug resistant Pseudomonas aeruginosa/i.test(text) || rCount >= 8)) return "MRPA";
+  if (/Acinetobacter baumannii/i.test(org) && (/MRAB|Multidrug resistant Acinetobacter baumannii/i.test(text) || rCount >= 8)) return "MRAB";
+  if (/Klebsiella|Escherichia|Enterobacter/i.test(org) && (/CRE|Carbapenem-Resistant Enterobacteriaceae/i.test(text) || rCount >= 8)) return "CRE";
+  if (/Staphylococcus aureus/i.test(org) && (/MRSA|Methicillin Resistant Staphylococcus aureus/i.test(text) || rCount >= 5)) return "MRSA";
+  return "";
+}
 
-  return { sList, rCount, section };
+function extractSusceptibleDrugs(lines) {
+  const susceptible = [];
+  let resistantCount = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const drug = antibiotics.find((a) => new RegExp(`^${a.replace(/[\/]/g, "\\/")}$`, "i").test(lines[i]));
+    if (!drug) continue;
+    const look = lines.slice(i + 1, i + 5);
+    const mic = look.find((x) => /^[<>=]*\d+(\.\d+)?$/.test(x)) || "";
+    const result = look.find((x) => /^[SIR]$/i.test(x));
+    if (result && result.toUpperCase() === "S") susceptible.push(mic ? `${drug} (MIC ${mic})` : drug);
+    if (result && result.toUpperCase() === "R") resistantCount += 1;
+  }
+  return { susceptible, resistantCount };
 }
 
 function extractCultureOrganisms(text) {
-  const organisms = [];
+  const lines = cleanLines(text);
   const orgs = extractOrganismNames(text);
+  const results = [];
+  if (orgs.length === 0) return ["배양 및 동정결과 확인 필요"];
 
-  if (orgs.length === 0) {
-    if (/MRAB.*미검출|미검출.*MRAB/i.test(text)) organisms.push("MRAB 미검출");
-    if (/Salmonella|Shigella|Vibrio/i.test(text) && /미검출/i.test(text)) {
-      organisms.push("Salmonella, Shigella, Vibrio 미검출");
-    }
-    return organisms.length ? organisms : ["배양 및 동정결과 확인 필요"];
-  }
-
-  orgs.forEach((org, idx) => {
-    const { sList, rCount, section } = extractDrugResultsForOrg(text, org, idx, orgs);
-    const label = extractResistanceLabel(org, text + "\n" + section, sList, rCount);
-
+  orgs.forEach((org) => {
+    const { susceptible, resistantCount } = extractSusceptibleDrugs(lines);
+    const label = getResistanceLabel(org, text, resistantCount);
     let line = org;
     if (label) line += ` (${label})`;
-    if (sList.length > 0) line += `, S: ${sList.join(", ")}`;
-
-    organisms.push(line);
+    if (susceptible.length) line += `, S: ${susceptible.join(", ")}`;
+    results.push(line);
   });
 
-  return organisms;
+  if (/CRE/i.test(text) && /배양되지|미검출/i.test(text)) results.push("※ CRE culture: [최종보고] CRE 균주가 배양되지 않았습니다.");
+  return Array.from(new Set(results));
 }
 
-function parseCultureReports(combinedText) {
-  const chunks = combinedText
-    .split(/\n=====\s*PDF_FILE:\s*/)
-    .map((x) => x.trim())
-    .filter((x) => x.length > 50);
-
+function parseCultureReports(chunks) {
   const patientMap = new Map();
-
-  chunks.forEach((chunk) => {
-    const firstLineEnd = chunk.indexOf("=====\n");
-    let filename = "";
-    let text = chunk;
-
-    if (firstLineEnd >= 0) {
-      filename = chunk.slice(0, firstLineEnd).replace(/=====/g, "").trim();
-      text = chunk.slice(firstLineEnd + 6);
-    }
-
-    text = normalizeCultureText(text);
+  chunks.forEach(({ filename, text }) => {
     const patient = extractPatientInfo(text, filename);
     const key = `${patient.chart}_${patient.name}`;
-
     if (!patientMap.has(key)) {
-      patientMap.set(key, {
-        chart: patient.chart,
-        name: patient.name,
-        date: patient.date,
-        specimens: [],
-      });
+      patientMap.set(key, { ...patient, specimens: new Map() });
     }
-
-    const item = patientMap.get(key);
-    const specimen = extractSpecimen(text);
+    const patientEntry = patientMap.get(key);
+    const specimenName = extractSpecimen(text);
     const organisms = extractCultureOrganisms(text);
-
-    item.specimens.push({
-      date: patient.date,
-      name: specimen,
-      organisms,
-      filename,
-    });
+    if (!patientEntry.specimens.has(specimenName)) patientEntry.specimens.set(specimenName, []);
+    const current = patientEntry.specimens.get(specimenName);
+    organisms.forEach((org) => { if (!current.includes(org)) current.push(org); });
   });
-
-  return Array.from(patientMap.values()).map((patient) => {
-    patient.specimens.sort((a, b) => a.name.localeCompare(b.name));
-    patient.date = patient.specimens[0]?.date || patient.date || today();
-    return patient;
-  });
+  return Array.from(patientMap.values()).map((p) => ({
+    ...p,
+    specimens: Array.from(p.specimens.entries()).map(([name, organisms]) => ({ name, organisms })),
+  }));
 }
 
 function formatCultureReport(result) {
   let output = "";
-
- output += `${result.age}/${result.sex}, ${result.name}\n`;
+  const firstLine = result.age && result.sex ? `${result.age}/${result.sex}, ${result.name}` : `${result.chart}, ${result.name}`;
+  output += `${firstLine}\n`;
   output += `#${result.date}\n`;
-  output += `◆최종결과보고◆(검체채취일:${slash(result.date)})\n`;
-
+  output += `◆ 최 종 결 과 보 고 ◆ (검체채취일: ${slash(result.date)})\n`;
   result.specimens.forEach((item, index) => {
     output += `${index + 1}.▣ 검체명 : ${item.name}\n`;
     output += `　▣ 배양 및 동정결과:\n`;
-
-    item.organisms.forEach((org, orgIndex) => {
-      if (item.organisms.length === 1) {
-        output += `　▶균주: ${org}\n`;
-      } else {
-        output += `　▶균주${orgIndex + 1}: ${org}\n`;
-      }
+    const normalOrgs = item.organisms.filter((x) => !x.startsWith("※"));
+    const comments = item.organisms.filter((x) => x.startsWith("※"));
+    normalOrgs.forEach((org, orgIndex) => {
+      output += normalOrgs.length === 1 ? `　▶균주: ${org}\n` : `　▶균주${orgIndex + 1}: ${org}\n`;
     });
+    comments.forEach((comment) => { output += `　${comment}\n`; });
   });
-
   return output.trim();
 }
 
 /* ================= 약품정리 ================= */
 
 const drugDB = {
-  "심혈관계": [
-    ["엔테론정", "포도씨건조엑스", "정맥순환개선"],
-    ["실로스타졸정", "실로스타졸", "혈류개선"],
-    ["딜라트렌정", "카르베딜롤", "고혈압"],
-    ["로수듀오정", "로수바스타틴 + 에제티미브", "고지혈증"],
-  ],
-  "소화기계": [
-    ["모티리톤정", "현호색·견우자추출물", "위장운동개선"],
-    ["메디락에스장용캡슐", "바실루스서브틸리스균·엔테로코쿠스", "장내균조절"],
-    ["가스터정", "파모티딘", "위산억제"],
-    ["가스티인씨알정", "모사프리드", "위장운동촉진"],
-  ],
-  "비뇨기계": [
-    ["젤미론캡슐", "펜토산폴리설페이트나트륨", "간질성방광염"],
-    ["쏘메토연질캡슐", "세레노아레펜스추출물", "전립선비대증"],
-    ["베타미가서방정", "미라베그론", "과민성방광"],
-    ["하루신서방정", "탐스로신", "전립선비대증"],
-    ["유로박솜캡슐", "균체용해물", "요로감염예방"],
-  ],
-  "신장/이뇨": [
-    ["아미로정", "아미로라이드", "이뇨"],
-    ["후릭스정", "푸로세미드", "이뇨"],
-  ],
-  "내분비계": [
-    ["아마릴정", "글리메피리드", "당뇨"],
-    ["네시나액트정", "알로글립틴 + 피오글리타존", "당뇨"],
-  ],
+  "심혈관계": [["엔테론정", "포도씨건조엑스", "정맥순환개선"], ["실로스타졸정", "실로스타졸", "혈류개선"], ["딜라트렌정", "카르베딜롤", "고혈압"], ["로수듀오정", "로수바스타틴 + 에제티미브", "고지혈증"]],
+  "소화기계": [["모티리톤정", "현호색·견우자추출물", "위장운동개선"], ["메디락에스장용캡슐", "바실루스서브틸리스균·엔테로코쿠스", "장내균조절"], ["가스터정", "파모티딘", "위산억제"], ["가스티인씨알정", "모사프리드", "위장운동촉진"]],
+  "비뇨기계": [["젤미론캡슐", "펜토산폴리설페이트나트륨", "간질성방광염"], ["쏘메토연질캡슐", "세레노아레펜스추출물", "전립선비대증"], ["베타미가서방정", "미라베그론", "과민성방광"], ["하루신서방정", "탐스로신", "전립선비대증"], ["유로박솜캡슐", "균체용해물", "요로감염예방"]],
+  "신장/이뇨": [["아미로정", "아미로라이드", "이뇨"], ["후릭스정", "푸로세미드", "이뇨"]],
+  "내분비계": [["아마릴정", "글리메피리드", "당뇨"], ["네시나액트정", "알로글립틴 + 피오글리타존", "당뇨"]],
 };
 
 function drugSort(input) {
   const text = input.replace(/\s+/g, "");
   let out = "작용부위        약이름              성분                              용도\n";
   out += "--------------------------------------------------------------------------\n";
-
   Object.entries(drugDB).forEach(([group, items]) => {
     const matched = items.filter(([name]) => text.includes(name.replace(/\s+/g, "")));
     if (!matched.length) return;
-
     matched.forEach(([name, comp, use], i) => {
       out += `${i === 0 ? group.padEnd(10, " ") : " ".repeat(10)}  ${name.padEnd(14, " ")}  ${comp.padEnd(30, " ")}  ${use}\n`;
     });
     out += "--------------------------------------------------------------------------\n";
   });
-
   return out.trim();
 }
-
-/* ================= 공통 UI ================= */
 
 function ResultBox({ title, text }) {
   return (
@@ -561,27 +424,21 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("lab");
   const [text, setText] = useState("");
   const [out, setOut] = useState([]);
-
   const [cultureFiles, setCultureFiles] = useState([]);
-  const [cultureText, setCultureText] = useState("");
   const [cultureOut, setCultureOut] = useState([]);
+  const [cultureRaw, setCultureRaw] = useState("");
   const [cultureLoading, setCultureLoading] = useState(false);
 
   const readFile = async (file) => {
     if (!file) return;
     const name = file.name.toLowerCase();
-
     if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: "array" });
       let t = "";
-
       wb.SheetNames.forEach((s) => {
-        XLSX.utils.sheet_to_json(wb.Sheets[s], { header: 1 }).forEach((r) => {
-          t += r.join(" ") + "\n";
-        });
+        XLSX.utils.sheet_to_json(wb.Sheets[s], { header: 1 }).forEach((r) => { t += r.join(" ") + "\n"; });
       });
-
       setText(t);
     } else if (name.endsWith(".txt")) {
       setText(await file.text());
@@ -593,22 +450,20 @@ export default function App() {
   const handleCultureUpload = async (files) => {
     const arr = Array.from(files || []);
     if (!arr.length) return;
-
     setCultureFiles(arr);
     setCultureLoading(true);
     setCultureOut([]);
-
+    setCultureRaw("");
     try {
-      let combined = "";
-
+      const chunks = [];
+      let raw = "";
       for (const file of arr) {
         const pdfText = await readPdfText(file);
-        combined += `\n===== PDF_FILE: ${file.name} =====\n`;
-        combined += pdfText;
+        chunks.push({ filename: file.name, text: pdfText });
+        raw += `\n===== ${file.name} =====\n${pdfText}\n`;
       }
-
-      setCultureText(combined);
-      setCultureOut(parseCultureReports(combined));
+      setCultureRaw(raw);
+      setCultureOut(parseCultureReports(chunks));
     } catch (err) {
       console.error(err);
       alert("PDF 읽기 중 오류가 발생했습니다.");
@@ -622,16 +477,10 @@ export default function App() {
       setOut([["약품정리", drugSort(text)]]);
       return;
     }
-
     const d = parse(text);
     const c = calc(d);
     const date = today();
-
-    setOut([
-      ["최종결과보고", report(d, c, date)],
-      ["비정상 수치 요약 및 현재체액상태", summary(d, c, date)],
-      ["검사결과 임상해석", interpretation(d, c, date)],
-    ]);
+    setOut([["최종결과보고", report(d, c, date)], ["비정상 수치 요약 및 현재체액상태", summary(d, c, date)], ["검사결과 임상해석", interpretation(d, c, date)]]);
   };
 
   return (
@@ -640,118 +489,58 @@ export default function App() {
         <h1>Clinical Assistant</h1>
         <p>검사결과 · 균배양 · 초진차트 · 진단서류 · 약품정리</p>
       </header>
-
       <div style={styles.nav}>
         <button style={activeTab === "lab" ? styles.active : styles.navBtn} onClick={() => { setActiveTab("lab"); setOut([]); }}>검사결과</button>
-        <button style={activeTab === "culture" ? styles.active : styles.navBtn} onClick={() => { setActiveTab("culture"); setOut([]); }}>균배양</button>
+        <button style={activeTab === "culture" ? styles.active : styles.navBtn} onClick={() => setActiveTab("culture")}>균배양</button>
         <button style={activeTab === "chart" ? styles.active : styles.navBtn} onClick={() => setActiveTab("chart")}>초진차트</button>
         <button style={activeTab === "doc" ? styles.active : styles.navBtn} onClick={() => setActiveTab("doc")}>진단서류</button>
         <button style={activeTab === "drug" ? styles.active : styles.navBtn} onClick={() => { setActiveTab("drug"); setOut([]); }}>약품정리</button>
       </div>
-
       <main style={styles.card}>
-       {activeTab === "culture" && (
-  <>
-    <h2>균배양 PDF 테스트</h2>
-
-    <input
-      type="file"
-      multiple
-      accept="application/pdf"
-      onChange={async (e) => {
-        const files = e.target.files;
-        let text = "";
-
-        for (const file of files) {
-          const buf = await file.arrayBuffer();
-          const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-
-          for (let i = 1; i <= pdf.numPages; i++) {
-            const page = await pdf.getPage(i);
-            const content = await page.getTextContent();
-            text += content.items.map(i => i.str).join("\n") + "\n";
-          }
-        }
-
-        alert(text.slice(0, 500)); // 확인용
-      }}
-    />
-</>
-)}
+        {activeTab === "lab" && (
+          <div>
             <h2>검사결과 정리</h2>
             <input type="file" accept=".xlsx,.xls,.txt" onChange={(e) => readFile(e.target.files[0])} />
-            <textarea
-              style={styles.textarea}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="검사결과를 붙여넣거나 파일을 올리세요"
-            />
+            <textarea style={styles.textarea} value={text} onChange={(e) => setText(e.target.value)} placeholder="검사결과를 붙여넣거나 파일을 올리세요" />
             <button onClick={run} style={styles.run}>정리하기</button>
-            {out.map(([title, text], i) => <ResultBox key={i} title={title} text={text} />)}
-         </div>
+            {out.map(([title, resultText], i) => <ResultBox key={i} title={title} text={resultText} />)}
+          </div>
         )}
-
         {activeTab === "culture" && (
-        <div>
+          <div>
             <h2>균배양 PDF 정리</h2>
-            <input
-              type="file"
-              accept="application/pdf"
-              multiple
-              onChange={(e) => handleCultureUpload(e.target.files)}
-            />
+            <input type="file" accept="application/pdf" multiple onChange={(e) => handleCultureUpload(e.target.files)} />
             <p style={styles.help}>여러 환자의 PDF를 한 번에 업로드하면 차트번호/이름 기준으로 나눠 정리합니다.</p>
-
             {cultureLoading && <p>PDF 읽는 중입니다...</p>}
-
             {!!cultureFiles.length && (
               <div style={styles.fileList}>
                 <b>업로드 파일</b>
                 {cultureFiles.map((file, i) => <div key={i}>- {file.name}</div>)}
               </div>
             )}
-
             {cultureOut.map((r, i) => {
-              const txt = formatCultureReport(r);
-              return <ResultBox key={i} title={`균배양 결과 ${i + 1} - ${r.age}/${r.sex}, ${r.name}`} text={txt} />;
+              const reportText = formatCultureReport(r);
+              const titleName = r.age && r.sex ? `${r.age}/${r.sex}, ${r.name}` : `${r.chart}, ${r.name}`;
+              return <ResultBox key={i} title={`균배양 결과 ${i + 1} - ${titleName}`} text={reportText} />;
             })}
-
-            {cultureText && (
+            {cultureRaw && (
               <details style={styles.details}>
                 <summary>PDF 추출 원문 확인</summary>
-                <pre style={styles.rawPre}>{cultureText}</pre>
+                <pre style={styles.rawPre}>{cultureRaw}</pre>
               </details>
             )}
-         </div>
+          </div>
         )}
-
         {activeTab === "drug" && (
-          <>
+          <div>
             <h2>약품정리</h2>
-            <textarea
-              style={styles.textarea}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="약 이름 목록을 붙여넣으세요"
-            />
+            <textarea style={styles.textarea} value={text} onChange={(e) => setText(e.target.value)} placeholder="약 이름 목록을 붙여넣으세요" />
             <button onClick={run} style={styles.run}>정리하기</button>
-            {out.map(([title, text], i) => <ResultBox key={i} title={title} text={text} />)}
-        </>
+            {out.map(([title, resultText], i) => <ResultBox key={i} title={title} text={resultText} />)}
+          </div>
         )}
-
-        {activeTab === "doc" && (
-  <div>
-    <h2>진단서류</h2>
-    <p>진단서류 기능은 아직 연결되지 않았습니다.</p>
-  </div>
-)}
-
-        {activeTab === "doc" && (
-         <div>
-            <h2>진단서류</h2>
-            <p>진단서류 기능은 아직 연결되지 않았습니다.</p>
-         </div>
-        )}
+        {activeTab === "chart" && <div><h2>초진차트</h2><p>초진차트 기능은 아직 연결되지 않았습니다.</p></div>}
+        {activeTab === "doc" && <div><h2>진단서류</h2><p>진단서류 기능은 아직 연결되지 않았습니다.</p></div>}
       </main>
     </div>
   );
