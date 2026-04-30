@@ -272,14 +272,11 @@ const raw = lines.join(" ");
 
 let name = "환자명미상";
 
-// 👇 수진자명 라인에서 직접 추출
-const nameLine = lines.find(l => l.includes("수진자명"));
+// 👇 실제 텍스트 구조 기반 (확정)
+const nameMatch = text.match(/([가-힣]{2,4})\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/);
 
-if (nameLine) {
-  const m = nameLine.match(/수진자명\s*([가-힣]{2,4})/);
-  if (m) {
-    name = m[1];
-  }
+if (nameMatch) {
+  name = nameMatch[1];
 }
  
 /* 👉 여기 ↓ 추가 */
