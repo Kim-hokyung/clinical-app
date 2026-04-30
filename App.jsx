@@ -271,10 +271,17 @@ let name = "";
 
 const raw = lines.join(" ");
 
-const m = raw.match(/([가-힣]{2,4})\s+주치의/);
+// 의사 기준으로 환자 이름 역추적
+const doctorMatch = raw.match(/주치의\s*([가-힣]{2,4})/);
 
-if (m) {
-  name = m[1];
+if (doctorMatch) {
+  const doctor = doctorMatch[1];
+  const before = raw.split(doctor)[0];
+  const m3 = before.match(/([가-힣]{2,4})\s*$/);
+
+  if (m3) {
+    name = m3[1];
+  }
 }
  
 /* 👉 여기 ↓ 추가 */
