@@ -200,7 +200,7 @@ ${abn.length ? abn.join("\n") : "- 특이 비정상 소견 없음"}
 ·SG(U)=${f(d.sg,3)}, pH(U)=${f(d.phu)}
 ·BUN/Cr.=${f(c.buncr)}
 ·FENa=${f(c.fena,2)}%, FEUrea=${f(c.feu,2)}%
-·GFR=${f(c.gfr,1)}ml/min, 단계${c.stage}
+·GFR: ${f(c.gfr,1)} mL/min/1.73m² (${c.stage})
 ·TotalCO2=${f(d.co2)}
 ·Lactic acid:${f(d.lactate)} , Ketone(U):${urineValue(d.ketone)}
 ·AG(anion gap)=${f(c.ag)}
