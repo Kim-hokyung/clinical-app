@@ -22,11 +22,57 @@ function str(text, keys) {
   return "";
 }
 
-const f = (v, n = 1) => v === "" || isNaN(v) ? "" : Number(v).toFixed(n).replace(/\.0$/, "");
-const mark = (v, low, high) => v === "" ? "" : v < low ? `${f(v)} ▼` : v > high ? `${f(v)} ▲` : f(v);
+const f = (v, n = 1) =>
+  v === "" || v === null || isNaN(v)
+    ? ""
+    : Number(v).toFixed(n).replace(/\.0$/, "");
+
+const mark = (v, low, high) =>
+  v === "" ? "" : v < low ? `${f(v)} ▼` : v > high ? `${f(v)} ▲` : f(v);
+
+function urineValue(line) {
+  if (!line) return "";
+  if (/Negative/i.test(line)) return "(-)";
+  const p = line.match(/([123])\s*Positive/i);
+  if (p) return `${p[1]}(+)`;
+  if (/Positive/i.test(line)) return "(+)";
+  if (/Trace/i.test(line)) return "Trace";
+  if (/Many/i.test(line)) return "Many";
+  if (/Bacteria are seen/i.test(line)) return "Bacteria are seen";
+  if (/Not Found/i.test(line)) return "Not Found";
+  const range = line.match(/[0-9]+~[0-9]+/);
+  if (range) return range[0];
+  return "";
+}
+
+function gfrCkdEpi2021(cr, age = 66, sex = "F") {
+  if (!cr) return "";
+  const female = sex === "F";
+  const k = female ? 0.7 : 0.9;
+  const alpha = female ? -0.241 : -0.302;
+  const min = Math.min(cr / k, 1);
+  const max = Math.max(cr / k, 1);
+  const gfr = 142 * Math.pow(min, alpha) * Math.pow(max, -1.2) * Math.pow(0.9938, age) * (female ? 1.012 : 1);
+  return gfr;
+}
+
+function gfrStage(gfr) {
+  if (gfr === "") return "";
+  if (gfr >= 90) return "G1";
+  if (gfr >= 60) return "G2";
+  if (gfr >= 45) return "G3a";
+  if (gfr >= 30) return "G3b";
+  if (gfr >= 15) return "G4";
+  return "G5";
+}
 
 function parse(text) {
+  const sexMatch = text.match(/\((M|F)\/(\d+)\)/i);
+  const sex = sexMatch ? sexMatch[1].toUpperCase() : "F";
+  const age = sexMatch ? Number(sexMatch[2]) : 66;
+
   return {
+    sex, age,
     protein: val(text, ["Protein, total", "Protein"]),
     albumin: val(text, ["Albumin\\(S\\)", "Albumin"]),
     bili: val(text, ["Bilirubin, total"]),
@@ -86,13 +132,8 @@ function parse(text) {
   };
 }
 
-function pick(line) {
-  if (!line) return "";
-  const m = line.match(/(Negative|Trace|Positive|[0-9]+ Positive|Many|[0-9]~[0-9]|Not Found|Bacteria are seen)/i);
-  return m ? m[0] : "";
-}
-
 function calc(d) {
+  const gfr = gfrCkdEpi2021(d.cr, d.age, d.sex);
   return {
     sosm: d.na && d.glucose && d.bun ? 2 * d.na + d.glucose / 18 + d.bun / 2.8 : "",
     buncr: d.bun && d.cr ? d.bun / d.cr : "",
@@ -100,6 +141,8 @@ function calc(d) {
     feu: d.bunu && d.cr && d.bun && d.cru ? (d.bunu * d.cr) / (d.bun * d.cru) * 100 : "",
     ag: d.na && d.cl && d.co2 ? d.na - (d.cl + d.co2) : "",
     uag: d.nau && d.ku && d.clu ? d.nau + d.ku - d.clu : "",
+    gfr,
+    stage: gfrStage(gfr),
   };
 }
 
@@ -131,13 +174,13 @@ N-RBC:Blast=${f(d.nrbc)}/${f(d.blast)}
 ▶뇨화학및검경검사
 1.Routineurine(10종)
 pH(U) ${f(d.phu)},SG(U):${f(d.sg,3)}
-Blood(U):${pick(d.bloodu)}/WBC(U):${pick(d.wbcu)}/Urobilinogen(U):${pick(d.urob)}
-Nitrite(U):${pick(d.nitrite)}
-Ketone(U)=${pick(d.ketone)}
-Protein(U)=${pick(d.proteinU)}
+Blood(U):${urineValue(d.bloodu)}/WBC(U):${urineValue(d.wbcu)}/Urobilinogen(U):${urineValue(d.urob)}
+Nitrite(U):${urineValue(d.nitrite)}
+Ketone(U):${urineValue(d.ketone)}
+Protein(U):${urineValue(d.proteinU)}
 2.요침사검사
-요침사(RBC):${pick(d.urbc)}/요침사(WBC):${pick(d.uwbc)}/요침사(EPCell):${pick(d.ep)}
-요침사(Cast):${pick(d.cast)}/요침사(Bacteria):${pick(d.bacteria)}`;
+요침사(RBC):${urineValue(d.urbc)}/요침사(WBC):${urineValue(d.uwbc)}/요침사(EPCell):${urineValue(d.ep)}
+요침사(Cast):${urineValue(d.cast)}/요침사(Bacteria):${urineValue(d.bacteria)}`;
 }
 
 function summary(d, c, date) {
@@ -153,15 +196,15 @@ function summary(d, c, date) {
 ◆비정상 수치 요약◆
 ▶임상화학 및 혈액 비정상 소견
 ${abn.length ? abn.join("\n") : "- 특이 비정상 소견 없음"}
-
 <<현재체액상태>>
 ·Na(S)=${f(d.na)}, Sosm=${mark(c.sosm,275,295)}
 ·Na(U)=${f(d.nau)}, Uosm=${f(d.uosm)}
 ·SG(U)=${f(d.sg,3)}, pH(U)=${f(d.phu)}
 ·BUN/Cr.=${f(c.buncr)}
 ·FENa=${f(c.fena,2)}%, FEUrea=${f(c.feu,2)}%
+·GFR=${f(c.gfr,1)}ml/min, 단계${c.stage}
 ·TotalCO2=${f(d.co2)}
-·Lactic acid:${f(d.lactate)} , Ketone(U): ${pick(d.ketone)}
+·Lactic acid:${f(d.lactate)} , Ketone(U):${urineValue(d.ketone)}
 ·AG(anion gap)=${f(c.ag)}
 ·uAG(urine aniongap)=${mark(c.uag,-999,0)}
 ·Cl(S):Cl(U)=${f(d.cl)}:${f(d.clu)}`;
@@ -172,26 +215,24 @@ function interpretation(d, c, date) {
   if (d.na < 136) parts.push(`1.전해질상태\n- 저나트륨혈증 소견으로 체액상태 및 원인 평가 필요.`);
   if (d.co2 < 22 || c.ag > 16) parts.push(`2.산염기상태\n- TotalCO2 및 AG 기준 대사성 산증 가능성 평가 필요.`);
   if (d.cr > 0.98 || c.fena > 2 || c.feu > 50) parts.push(`3.신장기능\n- Cr/BUN 및 FENa, FEUrea 기준 신장성 원인 감별 필요.`);
-  if (pick(d.wbcu) || pick(d.bacteria) || pick(d.nitrite)) parts.push(`4.소변검사\n- 요검사 이상 소견 확인되며 요로감염 여부 평가 필요.`);
+  if (urineValue(d.wbcu) || urineValue(d.bacteria) || urineValue(d.nitrite)) parts.push(`4.소변검사\n- 요검사 이상 소견 확인되며 요로감염 여부 평가 필요.`);
   if (d.alp > 120 || d.ggt > 64) parts.push(`5.간담도\n- ALP/γ-GT 상승으로 간담도계 부하 가능성.`);
   if (d.crp > 0.5 || d.pct > 0.5 || d.wbc > 10) parts.push(`6.종합임상판단\n- 염증/감염 소견 동반되어 임상증상과 배양검사 확인 필요.`);
 
   return `#${date}
 [검사결과임상해석]
-${parts.length ? parts.join("\n\n") : "- 특이 임상 이상 소견 뚜렷하지 않음."}
-
+${parts.length ? parts.join("\n") : "- 특이 임상 이상 소견 뚜렷하지 않음."}
 [한줄요약]
 #${date}
 - 주요 검사 이상 소견에 따른 임상적 추적 필요.`;
 }
 
 function ResultBox({ title, text }) {
-  const copy = () => navigator.clipboard.writeText(text);
   return (
     <div style={styles.box}>
       <div style={styles.boxTop}>
         <b>{title}</b>
-        <button onClick={copy} style={styles.copy}>복사</button>
+        <button onClick={() => navigator.clipboard.writeText(text)} style={styles.copy}>복사</button>
       </div>
       <pre style={styles.pre}>{text}</pre>
     </div>
@@ -257,5 +298,5 @@ const styles = {
   box: { marginTop: 22, background: "#f1f5f9", border: "1px solid #d8e1ea" },
   boxTop: { display: "flex", justifyContent: "space-between", padding: 10, background: "#e2e8f0" },
   copy: { padding: "6px 12px" },
-  pre: { padding: 16, whiteSpace: "pre-wrap", overflowX: "hidden", lineHeight: 1.55, fontSize: 14 },
+  pre: { padding: 16, whiteSpace: "pre-wrap", overflowX: "hidden", lineHeight: 1.45, fontSize: 14 },
 };
