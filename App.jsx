@@ -52,8 +52,7 @@ function gfrCkdEpi2021(cr, age = 66, sex = "F") {
   const alpha = female ? -0.241 : -0.302;
   const min = Math.min(cr / k, 1);
   const max = Math.max(cr / k, 1);
-  const gfr = 142 * Math.pow(min, alpha) * Math.pow(max, -1.2) * Math.pow(0.9938, age) * (female ? 1.012 : 1);
-  return gfr;
+  return 142 * Math.pow(min, alpha) * Math.pow(max, -1.2) * Math.pow(0.9938, age) * (female ? 1.012 : 1);
 }
 
 function gfrStage(gfr) {
@@ -200,12 +199,13 @@ ${abn.length ? abn.join("\n") : "- 특이 비정상 소견 없음"}
 ·SG(U)=${f(d.sg,3)}, pH(U)=${f(d.phu)}
 ·BUN/Cr.=${f(c.buncr)}
 ·FENa=${f(c.fena,2)}%, FEUrea=${f(c.feu,2)}%
- GFR: ${f(c.gfr,1)} mL/min/1.73m² (${c.stage})
+GFR: ${f(c.gfr,1)} mL/min/1.73m² (${c.stage})
 ·TotalCO2=${f(d.co2)}
 ·Lactic acid:${f(d.lactate)} , Ketone(U):${urineValue(d.ketone)}
 ·AG(anion gap)=${f(c.ag)}
 ·uAG(urine aniongap)=${mark(c.uag,-999,0)}
-·Cl(S)/Cl(U): ${f(d.cl)} / ${f(d.clu)}
+·Cl(S)/Cl(U): ${f(d.cl)} / ${f(d.clu)}`;
+}
 
 function interpretation(d, c, date) {
   const parts = [];
@@ -224,6 +224,58 @@ ${parts.length ? parts.join("\n") : "- 특이 임상 이상 소견 뚜렷하지 
 - 주요 검사 이상 소견에 따른 임상적 추적 필요.`;
 }
 
+/* ================= 약품정리 ================= */
+
+const drugDB = {
+  "심혈관계": [
+    ["엔테론정", "포도씨건조엑스", "정맥순환개선"],
+    ["실로스타졸정", "실로스타졸", "혈류개선"],
+    ["딜라트렌정", "카르베딜롤", "고혈압"],
+    ["로수듀오정", "로수바스타틴 + 에제티미브", "고지혈증"],
+  ],
+  "소화기계": [
+    ["모티리톤정", "현호색·견우자추출물", "위장운동개선"],
+    ["메디락에스장용캡슐", "바실루스서브틸리스균·엔테로코쿠스", "장내균조절"],
+    ["가스터정", "파모티딘", "위산억제"],
+    ["가스티인씨알정", "모사프리드", "위장운동촉진"],
+  ],
+  "비뇨기계": [
+    ["젤미론캡슐", "펜토산폴리설페이트나트륨", "간질성방광염"],
+    ["쏘메토연질캡슐", "세레노아레펜스추출물", "전립선비대증"],
+    ["베타미가서방정", "미라베그론", "과민성방광"],
+    ["하루신서방정", "탐스로신", "전립선비대증"],
+    ["유로박솜캡슐", "균체용해물", "요로감염예방"],
+  ],
+  "신장/이뇨": [
+    ["아미로정", "아미로라이드", "이뇨"],
+    ["후릭스정", "푸로세미드", "이뇨"],
+  ],
+  "내분비계": [
+    ["아마릴정", "글리메피리드", "당뇨"],
+    ["네시나액트정", "알로글립틴 + 피오글리타존", "당뇨"],
+  ],
+};
+
+function drugSort(input) {
+  const text = input.replace(/\s+/g, "");
+  let out = "작용부위        약이름              성분                              용도\n";
+  out += "--------------------------------------------------------------------------\n";
+
+  Object.entries(drugDB).forEach(([group, items]) => {
+    const matched = items.filter(([name]) => text.includes(name.replace(/\s+/g, "")));
+    if (!matched.length) return;
+
+    matched.forEach(([name, comp, use], i) => {
+      out += `${i === 0 ? group.padEnd(10, " ") : " ".repeat(10)}  ${name.padEnd(14, " ")}  ${comp.padEnd(30, " ")}  ${use}\n`;
+    });
+    out += "--------------------------------------------------------------------------\n";
+  });
+
+  return out.trim();
+}
+
+/* ================= 공통 UI ================= */
+
 function ResultBox({ title, text }) {
   return (
     <div style={styles.box}>
@@ -237,6 +289,7 @@ function ResultBox({ title, text }) {
 }
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState("lab");
   const [text, setText] = useState("");
   const [out, setOut] = useState([]);
 
@@ -259,6 +312,11 @@ export default function App() {
   };
 
   const run = () => {
+    if (activeTab === "drug") {
+      setOut([["약품정리", drugSort(text)]]);
+      return;
+    }
+
     const d = parse(text);
     const c = calc(d);
     const date = today();
@@ -275,11 +333,31 @@ export default function App() {
         <h1>Clinical Assistant</h1>
         <p>검사결과 · 균배양 · 초진차트 · 진단서류 · 약품정리</p>
       </header>
+
+      <div style={styles.nav}>
+        <button style={activeTab === "lab" ? styles.active : styles.navBtn} onClick={() => {setActiveTab("lab"); setOut([]);}}>검사결과</button>
+        <button style={activeTab === "culture" ? styles.active : styles.navBtn} onClick={() => setActiveTab("culture")}>균배양</button>
+        <button style={activeTab === "chart" ? styles.active : styles.navBtn} onClick={() => setActiveTab("chart")}>초진차트</button>
+        <button style={activeTab === "doc" ? styles.active : styles.navBtn} onClick={() => setActiveTab("doc")}>진단서류</button>
+        <button style={activeTab === "drug" ? styles.active : styles.navBtn} onClick={() => {setActiveTab("drug"); setOut([]);}}>약품정리</button>
+      </div>
+
       <main style={styles.card}>
-        <h2>검사결과 정리</h2>
-        <input type="file" accept=".xlsx,.xls,.txt" onChange={e => readFile(e.target.files[0])} />
-        <textarea style={styles.textarea} value={text} onChange={e => setText(e.target.value)} />
+        <h2>{activeTab === "drug" ? "약품정리" : "검사결과 정리"}</h2>
+
+        {activeTab === "lab" && (
+          <input type="file" accept=".xlsx,.xls,.txt" onChange={e => readFile(e.target.files[0])} />
+        )}
+
+        <textarea
+          style={styles.textarea}
+          value={text}
+          onChange={e => setText(e.target.value)}
+          placeholder={activeTab === "drug" ? "약 이름 목록을 붙여넣으세요" : "검사결과를 붙여넣거나 파일을 올리세요"}
+        />
+
         <button onClick={run} style={styles.run}>정리하기</button>
+
         {out.map(([title, text], i) => <ResultBox key={i} title={title} text={text} />)}
       </main>
     </div>
@@ -289,6 +367,9 @@ export default function App() {
 const styles = {
   page: { background: "#eef3f8", minHeight: "100vh", fontFamily: "Arial" },
   header: { background: "#1f3b5c", color: "white", padding: 28, textAlign: "center" },
+  nav: { display: "flex", justifyContent: "center", gap: 10, background: "white", padding: 18 },
+  navBtn: { padding: "10px 18px", border: "1px solid #c9d6e2", background: "#e8eef5" },
+  active: { padding: "10px 18px", border: "1px solid #1f3b5c", background: "#1f3b5c", color: "white" },
   card: { background: "white", maxWidth: 1100, margin: "28px auto", padding: 26, borderRadius: 12 },
   textarea: { width: "100%", height: 220, marginTop: 14, padding: 12, boxSizing: "border-box" },
   run: { marginTop: 14, background: "#2b8fd8", color: "white", border: 0, padding: "12px 22px" },
