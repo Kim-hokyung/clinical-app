@@ -676,7 +676,7 @@ export default function App() {
         alert(text.slice(0, 500)); // 확인용
       }}
     />
-  </>
+ </div>
 )}
             <h2>검사결과 정리</h2>
             <input type="file" accept=".xlsx,.xls,.txt" onChange={(e) => readFile(e.target.files[0])} />
@@ -688,11 +688,11 @@ export default function App() {
             />
             <button onClick={run} style={styles.run}>정리하기</button>
             {out.map(([title, text], i) => <ResultBox key={i} title={title} text={text} />)}
-          </>
+         </div>
         )}
 
         {activeTab === "culture" && (
-          <>
+        <div>
             <h2>균배양 PDF 정리</h2>
             <input
               type="file"
@@ -722,7 +722,7 @@ export default function App() {
                 <pre style={styles.rawPre}>{cultureText}</pre>
               </details>
             )}
-          </>
+         </div>
         )}
 
         {activeTab === "drug" && (
@@ -736,21 +736,21 @@ export default function App() {
             />
             <button onClick={run} style={styles.run}>정리하기</button>
             {out.map(([title, text], i) => <ResultBox key={i} title={title} text={text} />)}
-          </>
+         </div>
         )}
 
         {activeTab === "chart" && (
           <>
             <h2>초진차트</h2>
             <p>초진차트 기능은 아직 연결되지 않았습니다.</p>
-          </>
+          </div>
         )}
 
         {activeTab === "doc" && (
           <>
             <h2>진단서류</h2>
             <p>진단서류 기능은 아직 연결되지 않았습니다.</p>
-          </>
+         </div>
         )}
       </main>
     </div>
