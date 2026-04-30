@@ -267,32 +267,23 @@ function extractPatientInfo(text, filename = "") {
   const lines = cleanLines(text);
   const compact = lines.join(" ");
   const chart = valueAfterLabel(lines, "차트번호") || "차트번호미상";
-let name = "";
 
 const raw = lines.join(" ");
 
-// 의사 기준으로 환자 이름 역추적
-const doctorMatch = raw.match(/주치의\s*([가-힣]{2,4})/);
+let name = "환자명미상";
 
-if (doctorMatch) {
-  const doctor = doctorMatch[1];
-  const before = raw.split(doctor)[0];
-  const m3 = before.match(/([가-힣]{2,4})\s*$/);
+// 👇 수진자명 라인에서 직접 추출
+const nameLine = lines.find(l => l.includes("수진자명"));
 
-  if (m3) {
-    name = m3[1];
+if (nameLine) {
+  const m = nameLine.match(/수진자명\s*([가-힣]{2,4})/);
+  if (m) {
+    name = m[1];
   }
 }
  
 /* 👉 여기 ↓ 추가 */
-if (!name || name === "환자명미상") {
-  const m2 = raw.match(/\d{1,3}\s*\/\s*[MF]\s*([가-힣]{2,4})/i);
-  if (m2) {
-    name = m2[1];
-  }
-}
-  
-  
+
 
 if (!name) name = "환자명미상";
 
