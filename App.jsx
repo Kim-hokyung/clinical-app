@@ -713,7 +713,7 @@ export default function App() {
 
             {cultureOut.map((r, i) => {
               const txt = formatCultureReport(r);
-              return <ResultBox key={i} title={`균배양 결과 ${i + 1} - ${r.chart} / ${r.name}`} text={txt} />;
+              return <ResultBox key={i} title={`균배양 결과 ${i + 1} - ${r.age}/${r.sex}, ${r.name}`} text={txt} />;
             })}
 
             {cultureText && (
