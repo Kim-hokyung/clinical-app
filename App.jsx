@@ -473,7 +473,7 @@ function parseCultureReports(combinedText) {
 function formatCultureReport(result) {
   let output = "";
 
-  output += `[${result.chart} / ${result.name}]\n`;
+ output += `${result.age}/${result.sex}, ${result.name}\n`;
   output += `#${result.date}\n`;
   output += `◆최종결과보고◆(검체채취일:${slash(result.date)})\n`;
 
