@@ -175,7 +175,7 @@ N-RBC:Blast=${f(d.nrbc)}/${f(d.blast)}
 1.Routineurine(10종)
 pH(U) ${f(d.phu)},SG(U):${f(d.sg,3)}
 Blood(U):${urineValue(d.bloodu)} / WBC(U):${urineValue(d.wbcu)} / Urobilinogen(U):${urineValue(d.urob)}
-Nitrite(U):${urineValue(d.nitrite)} , Ketone(U):${urineValue(d.ketone)} , Protein(U):${urineValue(d.proteinU)}\n
+Nitrite(U):${urineValue(d.nitrite)} , Ketone(U):${urineValue(d.ketone)} , Protein(U):${urineValue(d.proteinU)}\
 2.요침사검사
 요침사(RBC):${urineValue(d.urbc)}/요침사(WBC):${urineValue(d.uwbc)}/요침사(EPCell):${urineValue(d.ep)}
 요침사(Cast):${urineValue(d.cast)}/요침사(Bacteria):${urineValue(d.bacteria)}`;
@@ -200,13 +200,12 @@ ${abn.length ? abn.join("\n") : "- 특이 비정상 소견 없음"}
 ·SG(U)=${f(d.sg,3)}, pH(U)=${f(d.phu)}
 ·BUN/Cr.=${f(c.buncr)}
 ·FENa=${f(c.fena,2)}%, FEUrea=${f(c.feu,2)}%
-·GFR: ${f(c.gfr,1)} mL/min/1.73m² (${c.stage})
+ GFR: ${f(c.gfr,1)} mL/min/1.73m² (${c.stage})
 ·TotalCO2=${f(d.co2)}
 ·Lactic acid:${f(d.lactate)} , Ketone(U):${urineValue(d.ketone)}
 ·AG(anion gap)=${f(c.ag)}
 ·uAG(urine aniongap)=${mark(c.uag,-999,0)}
-·Cl(S):Cl(U)=${f(d.cl)}:${f(d.clu)}`;
-}
+·Cl(S)/Cl(U): ${f(d.cl)} / ${f(d.clu)}
 
 function interpretation(d, c, date) {
   const parts = [];
