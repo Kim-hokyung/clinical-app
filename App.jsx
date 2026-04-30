@@ -269,10 +269,19 @@ function extractPatientInfo(text, filename = "") {
   const chart = valueAfterLabel(lines, "차트번호") || "차트번호미상";
 let name = "";
 
-const nameMatch = lines.join(" ").match(/생년월일\s*\d{4}-\d{2}-\d{2}\s+([가-힣]{2,4})/);
-if (nameMatch) {
-  name = nameMatch[1];
+const raw = lines.join(" ");
+
+const candidates = raw.match(/[가-힣]{2,4}/g) || [];
+
+const filtered = candidates.filter(w =>
+  !["주치의", "기관", "결과", "보고", "검체", "배양", "동정", "균주"].includes(w)
+);
+
+if (filtered.length > 0) {
+  name = filtered[0];
 }
+
+if (!name) name = "환자명미상";
 
   const ageSexMatch = compact.match(/(\d{1,3})\s*\/\s*(M|F)/i);
   const age = ageSexMatch ? ageSexMatch[1] : "";
