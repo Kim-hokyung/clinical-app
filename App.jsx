@@ -688,7 +688,7 @@ export default function App() {
             />
             <button onClick={run} style={styles.run}>정리하기</button>
             {out.map(([title, text], i) => <ResultBox key={i} title={title} text={text} />)}
-         </>
+         </div>
         )}
 
         {activeTab === "culture" && (
@@ -739,18 +739,18 @@ export default function App() {
         </>
         )}
 
-        {activeTab === "chart" && (
-          <>
-            <h2>초진차트</h2>
-            <p>초진차트 기능은 아직 연결되지 않았습니다.</p>
-          </>
-        )}
+        {activeTab === "doc" && (
+  <div>
+    <h2>진단서류</h2>
+    <p>진단서류 기능은 아직 연결되지 않았습니다.</p>
+  </div>
+)}
 
         {activeTab === "doc" && (
-          <>
+         <div>
             <h2>진단서류</h2>
             <p>진단서류 기능은 아직 연결되지 않았습니다.</p>
-         </>
+         </div>
         )}
       </main>
     </div>
