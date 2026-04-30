@@ -1,5 +1,9 @@
 import React, { useState } from "react";
 import * as XLSX from "xlsx";
+import * as pdfjsLib from "pdfjs-dist";
+import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const today = () => new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
 const slash = (d) => d.replaceAll("-", "/");
@@ -224,6 +228,143 @@ ${parts.length ? parts.join("\n") : "- 특이 임상 이상 소견 뚜렷하지 
 - 주요 검사 이상 소견에 따른 임상적 추적 필요.`;
 }
 
+/* ================= 균배양 ================= */
+
+async function readPdfText(file) {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+
+  let fullText = "";
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items.map((item) => item.str).join(" ");
+    fullText += "\n" + pageText;
+  }
+
+  return fullText;
+}
+
+function extractDateFromCulture(text) {
+  const m =
+    text.match(/검체채취일[^0-9]*(\d{4})[./-](\d{2})[./-](\d{2})/) ||
+    text.match(/채취일[^0-9]*(\d{4})[./-](\d{2})[./-](\d{2})/) ||
+    text.match(/(\d{4})[./-](\d{2})[./-](\d{2})/);
+
+  if (!m) return today();
+
+  return `${m[1]}-${m[2]}-${m[3]}`;
+}
+
+function extractCultureOrganisms(section) {
+  const organisms = [];
+
+  if (/Acinetobacter\s+baumannii/i.test(section)) {
+    if (/MRAB/i.test(section)) {
+      if (/Minocycline/i.test(section)) {
+        organisms.push("Acinetobacter baumannii (MRAB), S: Minocycline");
+      } else {
+        organisms.push("Acinetobacter baumannii (MRAB)");
+      }
+    } else {
+      organisms.push("Acinetobacter baumannii");
+    }
+  }
+
+  if (/Klebsiella\s+pneumoniae/i.test(section)) {
+    if (/CRE/i.test(section)) {
+      if (/Amikacin/i.test(section)) {
+        organisms.push("Klebsiella pneumoniae (CRE), S: Amikacin");
+      } else {
+        organisms.push("Klebsiella pneumoniae (CRE)");
+      }
+    } else {
+      organisms.push("Klebsiella pneumoniae");
+    }
+  }
+
+  if (/MRAB[^가-힣A-Za-z0-9]{0,20}미검출|미검출[^가-힣A-Za-z0-9]{0,20}MRAB/i.test(section)) {
+    organisms.push("MRAB 미검출");
+  }
+
+  if (/Salmonella|Shigella|Vibrio/i.test(section) && /미검출/i.test(section)) {
+    organisms.push("Salmonella, Shigella, Vibrio 미검출");
+  }
+
+  if (organisms.length === 0) {
+    organisms.push("배양 및 동정결과 확인 필요");
+  }
+
+  return organisms;
+}
+
+function parseCultureReports(combinedText) {
+  const text = combinedText.replace(/\s+/g, " ");
+  const date = extractDateFromCulture(text);
+
+  const specimenNames = [
+    "Nasal Swab",
+    "Rectal Swab",
+    "Sputum",
+    "Urine",
+    "Blood",
+    "Wound",
+    "Stool",
+    "Throat Swab",
+  ];
+
+  const specimens = [];
+
+  specimenNames.forEach((name) => {
+    const idx = text.toLowerCase().indexOf(name.toLowerCase());
+    if (idx >= 0) {
+      const section = text.slice(idx, idx + 1500);
+      specimens.push({
+        name,
+        organisms: extractCultureOrganisms(section),
+      });
+    }
+  });
+
+  if (specimens.length === 0) {
+    specimens.push({
+      name: "검체명 확인 필요",
+      organisms: ["PDF 원문에서 검체명/균주 자동분리 필요"],
+    });
+  }
+
+  return [
+    {
+      patient: "환자",
+      date,
+      specimens,
+    },
+  ];
+}
+
+function formatCultureReport(result) {
+  let output = "";
+
+  output += `#${result.date}\n`;
+  output += `◆최종결과보고◆(검체채취일:${slash(result.date)})\n`;
+
+  result.specimens.forEach((item, index) => {
+    output += `${index + 1}.▣ 검체명 : ${item.name}\n`;
+    output += `　▣ 배양 및 동정결과:\n`;
+
+    item.organisms.forEach((org, orgIndex) => {
+      if (item.organisms.length === 1) {
+        output += `　▶균주: ${org}\n`;
+      } else {
+        output += `　▶균주${orgIndex + 1}: ${org}\n`;
+      }
+    });
+  });
+
+  return output.trim();
+}
+
 /* ================= 약품정리 ================= */
 
 const drugDB = {
@@ -293,6 +434,11 @@ export default function App() {
   const [text, setText] = useState("");
   const [out, setOut] = useState([]);
 
+  const [cultureFiles, setCultureFiles] = useState([]);
+  const [cultureText, setCultureText] = useState("");
+  const [cultureOut, setCultureOut] = useState([]);
+  const [cultureLoading, setCultureLoading] = useState(false);
+
   const readFile = async (file) => {
     if (!file) return;
     const name = file.name.toLowerCase();
@@ -308,6 +454,33 @@ export default function App() {
       setText(await file.text());
     } else {
       alert("엑셀(.xlsx/.xls) 또는 텍스트(.txt)만 지원합니다.");
+    }
+  };
+
+  const handleCultureUpload = async (files) => {
+    const arr = Array.from(files || []);
+    if (!arr.length) return;
+
+    setCultureFiles(arr);
+    setCultureLoading(true);
+    setCultureOut([]);
+
+    try {
+      let combined = "";
+
+      for (const file of arr) {
+        const pdfText = await readPdfText(file);
+        combined += `\n===== ${file.name} =====\n`;
+        combined += pdfText;
+      }
+
+      setCultureText(combined);
+      setCultureOut(parseCultureReports(combined));
+    } catch (err) {
+      console.error(err);
+      alert("PDF 읽기 중 오류가 발생했습니다.");
+    } finally {
+      setCultureLoading(false);
     }
   };
 
@@ -336,29 +509,102 @@ export default function App() {
 
       <div style={styles.nav}>
         <button style={activeTab === "lab" ? styles.active : styles.navBtn} onClick={() => {setActiveTab("lab"); setOut([]);}}>검사결과</button>
-        <button style={activeTab === "culture" ? styles.active : styles.navBtn} onClick={() => setActiveTab("culture")}>균배양</button>
+        <button style={activeTab === "culture" ? styles.active : styles.navBtn} onClick={() => {setActiveTab("culture"); setOut([]);}}>균배양</button>
         <button style={activeTab === "chart" ? styles.active : styles.navBtn} onClick={() => setActiveTab("chart")}>초진차트</button>
         <button style={activeTab === "doc" ? styles.active : styles.navBtn} onClick={() => setActiveTab("doc")}>진단서류</button>
         <button style={activeTab === "drug" ? styles.active : styles.navBtn} onClick={() => {setActiveTab("drug"); setOut([]);}}>약품정리</button>
       </div>
 
       <main style={styles.card}>
-        <h2>{activeTab === "drug" ? "약품정리" : "검사결과 정리"}</h2>
-
         {activeTab === "lab" && (
-          <input type="file" accept=".xlsx,.xls,.txt" onChange={e => readFile(e.target.files[0])} />
+          <>
+            <h2>검사결과 정리</h2>
+
+            <input type="file" accept=".xlsx,.xls,.txt" onChange={e => readFile(e.target.files[0])} />
+
+            <textarea
+              style={styles.textarea}
+              value={text}
+              onChange={e => setText(e.target.value)}
+              placeholder="검사결과를 붙여넣거나 파일을 올리세요"
+            />
+
+            <button onClick={run} style={styles.run}>정리하기</button>
+
+            {out.map(([title, text], i) => <ResultBox key={i} title={title} text={text} />)}
+          </>
         )}
 
-        <textarea
-          style={styles.textarea}
-          value={text}
-          onChange={e => setText(e.target.value)}
-          placeholder={activeTab === "drug" ? "약 이름 목록을 붙여넣으세요" : "검사결과를 붙여넣거나 파일을 올리세요"}
-        />
+        {activeTab === "culture" && (
+          <>
+            <h2>균배양 PDF 정리</h2>
 
-        <button onClick={run} style={styles.run}>정리하기</button>
+            <input
+              type="file"
+              accept="application/pdf"
+              multiple
+              onChange={(e) => handleCultureUpload(e.target.files)}
+            />
 
-        {out.map(([title, text], i) => <ResultBox key={i} title={title} text={text} />)}
+            <p style={styles.help}>
+              한 환자당 여러 PDF를 한 번에 업로드할 수 있습니다.
+            </p>
+
+            {cultureLoading && <p>PDF 읽는 중입니다...</p>}
+
+            {!!cultureFiles.length && (
+              <div style={styles.fileList}>
+                <b>업로드 파일</b>
+                {cultureFiles.map((file, i) => (
+                  <div key={i}>- {file.name}</div>
+                ))}
+              </div>
+            )}
+
+            {cultureOut.map((r, i) => {
+              const txt = formatCultureReport(r);
+              return <ResultBox key={i} title={`균배양 결과 ${i + 1}`} text={txt} />;
+            })}
+
+            {cultureText && (
+              <details style={styles.details}>
+                <summary>PDF 추출 원문 확인</summary>
+                <pre style={styles.rawPre}>{cultureText}</pre>
+              </details>
+            )}
+          </>
+        )}
+
+        {activeTab === "drug" && (
+          <>
+            <h2>약품정리</h2>
+
+            <textarea
+              style={styles.textarea}
+              value={text}
+              onChange={e => setText(e.target.value)}
+              placeholder="약 이름 목록을 붙여넣으세요"
+            />
+
+            <button onClick={run} style={styles.run}>정리하기</button>
+
+            {out.map(([title, text], i) => <ResultBox key={i} title={title} text={text} />)}
+          </>
+        )}
+
+        {activeTab === "chart" && (
+          <>
+            <h2>초진차트</h2>
+            <p>초진차트 기능은 아직 연결되지 않았습니다.</p>
+          </>
+        )}
+
+        {activeTab === "doc" && (
+          <>
+            <h2>진단서류</h2>
+            <p>진단서류 기능은 아직 연결되지 않았습니다.</p>
+          </>
+        )}
       </main>
     </div>
   );
@@ -377,4 +623,8 @@ const styles = {
   boxTop: { display: "flex", justifyContent: "space-between", padding: 10, background: "#e2e8f0" },
   copy: { padding: "6px 12px" },
   pre: { padding: 16, whiteSpace: "pre-wrap", overflowX: "hidden", lineHeight: 1.45, fontSize: 14 },
+  help: { color: "#555", fontSize: 14 },
+  fileList: { marginTop: 14, padding: 12, background: "#f8fafc", border: "1px solid #e2e8f0" },
+  details: { marginTop: 20 },
+  rawPre: { background: "#111827", color: "white", padding: 14, whiteSpace: "pre-wrap", maxHeight: 300, overflowY: "auto" },
 };
