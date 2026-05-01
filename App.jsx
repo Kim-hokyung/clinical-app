@@ -352,7 +352,11 @@ function extractCultureOrganisms(text) {
     const label = getResistanceLabel(org, text, resistantCount);
     let line = org;
     if (label) line += ` (${label})`;
-    if (susceptible.length) line += `, S: ${susceptible.join(", ")}`;
+    if (susceptible.length) {
+  line += `, S: ${susceptible.join(", ")}`;
+} else {
+  line += `, 감수성 항생제 없음`;
+}
     results.push(line);
   });
 
