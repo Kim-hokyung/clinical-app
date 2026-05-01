@@ -363,7 +363,7 @@ function parseCultureReports(chunks) {
   const patientMap = new Map();
   chunks.forEach(({ filename, text }) => {
     const patient = extractPatientInfo(text, filename);
-    const key = `${patient.chart}_${patient.name}`;
+    const key = patient.chart || filename;
     if (!patientMap.has(key)) {
       patientMap.set(key, { ...patient, specimens: new Map() });
     }
