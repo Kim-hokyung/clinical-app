@@ -266,32 +266,33 @@ function valueAfterLabel(lines, label) {
 function extractPatientInfo(text, filename = "") {
   const lines = cleanLines(text);
   const compact = lines.join(" ");
+
   const chart = valueAfterLabel(lines, "차트번호") || "차트번호미상";
 
-const raw = lines.join(" ");
+  // 한 환자 기준: 실제 pdf.js 추출 구조에서 이름은 보통
+  // "박종규 2026-04-23 13:39" 형태로 나옵니다.
+  let name = "환자명미상";
+  const reportNameMatch = text.match(/([가-힣]{2,4})\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/);
+  if (reportNameMatch) {
+    name = reportNameMatch[1];
+  }
 
-let name = "환자명미상";
-
-// 👇 실제 텍스트 구조 기반 (확정)
-const nameMatch = text.match(/([가-힣]{2,4})\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/);
-
-if (nameMatch) {
-  name = nameMatch[1];
-}
- 
-/* 👉 여기 ↓ 추가 */
-
-
-if (!name) name = "환자명미상";
+  // 위 방식 실패 시, 수진자명 라인 안에서 한 번 더 시도합니다.
+  if (name === "환자명미상") {
+    const nameLine = lines.find((line) => line.includes("수진자명"));
+    const m = nameLine ? nameLine.match(/수진자명\s*([가-힣]{2,4})/) : null;
+    if (m) name = m[1];
+  }
 
   const ageSexMatch = compact.match(/(\d{1,3})\s*\/\s*(M|F)/i);
   const age = ageSexMatch ? ageSexMatch[1] : "";
   const sex = ageSexMatch ? ageSexMatch[2].toUpperCase() : "";
+
   const dateMatch = compact.match(/검체채취일\s*(\d{4})[./-](\d{2})[./-](\d{2})/) || compact.match(/(\d{4})[./-](\d{2})[./-](\d{2})/);
   const date = dateMatch ? `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}` : today();
+
   return { chart, name, age, sex, date, filename };
 }
-
 function extractSpecimen(text) {
   const lines = cleanLines(text);
   const fromLabel = valueAfterLabel(lines, "검\\s*체");
@@ -526,7 +527,7 @@ export default function App() {
           <div>
             <h2>균배양 PDF 정리</h2>
             <input type="file" accept="application/pdf" multiple onChange={(e) => handleCultureUpload(e.target.files)} />
-            <p style={styles.help}>여러 환자의 PDF를 한 번에 업로드하면 차트번호/이름 기준으로 나눠 정리합니다.</p>
+            <p style={styles.help}>한 환자 기준으로 PDF를 업로드하세요. 같은 환자의 여러 PDF는 함께 묶어 정리합니다.</p>
             {cultureLoading && <p>PDF 읽는 중입니다...</p>}
             {!!cultureFiles.length && (
               <div style={styles.fileList}>
